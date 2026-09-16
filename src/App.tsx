@@ -11,6 +11,11 @@ import PlaceholderFinanceiro from '@/pages/PlaceholderFinanceiro'
 import Usuarios from '@/pages/Usuarios'
 import NovoUsuario from '@/pages/NovoUsuario'
 import NotFound from '@/pages/NotFound'
+import FiadoLista from '@/pages/fiado/FiadoLista'
+import FiadoBloqueados from '@/pages/fiado/FiadoBloqueados'
+import FiadoClienteForm from '@/pages/fiado/FiadoClienteForm'
+import FiadoFichaCliente from '@/pages/fiado/FiadoFichaCliente'
+import FiadoConsumoForm from '@/pages/fiado/FiadoConsumoForm'
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -50,7 +55,47 @@ const App = () => (
               path="/fiado"
               element={
                 <Protected>
-                  <PlaceholderFinanceiro modulo="FIADO" />
+                  <FiadoLista />
+                </Protected>
+              }
+            />
+            <Route
+              path="/fiado/bloqueados"
+              element={
+                <Protected>
+                  <FiadoBloqueados />
+                </Protected>
+              }
+            />
+            <Route
+              path="/fiado/novo"
+              element={
+                <Protected>
+                  <FiadoClienteForm />
+                </Protected>
+              }
+            />
+            <Route
+              path="/fiado/cliente/:id"
+              element={
+                <Protected>
+                  <FiadoFichaCliente />
+                </Protected>
+              }
+            />
+            <Route
+              path="/fiado/cliente/:id/editar"
+              element={
+                <Protected>
+                  <FiadoClienteForm />
+                </Protected>
+              }
+            />
+            <Route
+              path="/fiado/cliente/:id/consumo"
+              element={
+                <Protected>
+                  <FiadoConsumoForm />
                 </Protected>
               }
             />
