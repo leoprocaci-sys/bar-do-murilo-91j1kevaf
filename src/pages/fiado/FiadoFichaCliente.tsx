@@ -20,11 +20,27 @@ import {
   RefreshCw,
   Loader2,
   ShieldCheck,
+  CreditCard,
+  Ban,
+  Pencil,
+  ArrowDownCircle,
+  Check,
 } from 'lucide-react'
 import Layout from '@/components/Layout'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { useToast } from '@/hooks/use-toast'
 import {
   getCliente,
@@ -32,9 +48,16 @@ import {
   getHistoricoCliente,
   getAuditoriaCliente,
   toggleFavoritoCliente,
+  editarPagamentoFiado,
+  cancelarPagamentoFiado,
 } from '@/services/fiado'
-import { formatCentavos, formatDateBR, formatDateTimeBR } from '@/lib/formatters'
-import type { Cliente } from '@/types/fiado'
+import {
+  formatCentavos,
+  formatDateBR,
+  formatDateTimeBR,
+  parseBRLToCentavos,
+} from '@/lib/formatters'
+import type { Cliente, FormaPagamento, MovimentacaoHistorico } from '@/types/fiado'
 
 export const FiadoFichaCliente = () => {
   const { id } = useParams<{ id: string }>()
@@ -42,6 +65,16 @@ export const FiadoFichaCliente = () => {
   const { toast } = useToast()
   const queryClient = useQueryClient()
   const [tabAtiva, setTabAtiva] = useState<'movimentacoes' | 'auditoria'>('movimentacoes')
+
+  // Estados para modais de Edição e Cancelamento de Pagamento
+  const [pagamentoParaEditar, setPagamentoParaEditar] = useState<MovimentacaoHistorico | null>(null)
+  const [editValorInput, setEditValorInput] = useState('')
+  const [editForma, setEditForma] = useState<FormaPagamento>('dinheiro')
+  const [editDataMovimento, setEditDataMovimento] = useState('')
+
+  const [pagamentoParaCancelar, setPagamentoParaCancelar] = useState<MovimentacaoHistorico | null>(
+    null,
+  )
 
   // 1. Dados cadastrais do cliente
   const {
@@ -65,7 +98,7 @@ export const FiadoFichaCliente = () => {
     enabled: Boolean(cliente),
   })
 
-  // 3. Histórico de movimentações (consumos e créditos)
+  // 3. Histórico de movimentações (consumos, pagamentos e créditos)
   const {
     data: historico = [],
     isLoading: isLoadingHistorico,
@@ -98,6 +131,67 @@ export const FiadoFichaCliente = () => {
       })
     },
   })
+
+  // Mutations para Edição e Cancelamento de Pagamento
+  const editarMutation = useMutation({
+    mutationFn: async () => {
+      if (!pagamentoParaEditar) return
+      const novoCentavos = parseBRLToCentavos(editValorInput)
+      if (novoCentavos <= 0) {
+        throw new Error('O valor corrigido deve ser maior que zero.')
+      }
+      return await editarPagamentoFiado({
+        pagamento_id: pagamentoParaEditar.id,
+        novo_valor_centavos: novoCentavos,
+        nova_forma: editForma,
+        nova_data_movimento: editDataMovimento,
+      })
+    },
+    onSuccess: () => {
+      setPagamentoParaEditar(null)
+      recarregarTudo()
+      toast({
+        title: 'Pagamento atualizado!',
+        description: 'Dívida, crédito e registro financeiro recalculados com sucesso.',
+      })
+    },
+    onError: (err: any) => {
+      toast({
+        title: 'Erro ao editar pagamento',
+        description: err.message || 'Não foi possível salvar as alterações.',
+        variant: 'destructive',
+      })
+    },
+  })
+
+  const cancelarMutation = useMutation({
+    mutationFn: async () => {
+      if (!pagamentoParaCancelar) return
+      return await cancelarPagamentoFiado(pagamentoParaCancelar.id)
+    },
+    onSuccess: () => {
+      setPagamentoParaCancelar(null)
+      recarregarTudo()
+      toast({
+        title: 'Pagamento cancelado!',
+        description: 'Efeitos sobre dívida e crédito desfeitos com sucesso.',
+      })
+    },
+    onError: (err: any) => {
+      toast({
+        title: 'Erro ao cancelar pagamento',
+        description: err.message || 'Não foi possível cancelar o pagamento.',
+        variant: 'destructive',
+      })
+    },
+  })
+
+  const abrirEdicaoPagamento = (pag: MovimentacaoHistorico) => {
+    setPagamentoParaEditar(pag)
+    setEditValorInput((pag.valor_centavos / 100).toFixed(2).replace('.', ','))
+    setEditForma((pag.forma as FormaPagamento) || 'dinheiro')
+    setEditDataMovimento(pag.data_movimento)
+  }
 
   const recarregarTudo = () => {
     refetchCliente()
@@ -250,29 +344,41 @@ export const FiadoFichaCliente = () => {
         )}
       </div>
 
-      {/* AÇÃO PRINCIPAL DESTACADA: REGISTRAR CONSUMO */}
-      <div className="mt-4">
+      {/* AÇÕES PRINCIPAIS NO BALCÃO: RECEBER PAGAMENTO E REGISTRAR CONSUMO */}
+      <div className="mt-4 grid grid-cols-1 gap-2.5 sm:grid-cols-2">
+        {/* Ação 1: Receber Pagamento Fiado (Regra 6: Acesso obrigatório na ficha do cliente) */}
+        <Button
+          type="button"
+          onClick={() => navigate(`/fiado/cliente/${cliente.id}/pagamento`)}
+          className="h-16 w-full rounded-2xl bg-emerald-800 text-lg font-bold tracking-wide text-[#F3EAD3] hover:bg-emerald-700 active:scale-[0.98] shadow-lg shadow-emerald-950/40 transition-all border border-emerald-600/60"
+        >
+          <CreditCard className="mr-2.5 h-6 w-6 text-emerald-300" />
+          RECEBER PAGAMENTO
+        </Button>
+
+        {/* Ação 2: Registrar Consumo Fiado */}
         <Button
           type="button"
           disabled={!podeComprarFiado}
           onClick={() => navigate(`/fiado/cliente/${cliente.id}/consumo`)}
-          className={`h-16 w-full rounded-2xl text-xl font-bold tracking-wider shadow-lg active:scale-[0.98] transition-all ${
+          className={`h-16 w-full rounded-2xl text-lg font-bold tracking-wide shadow-lg active:scale-[0.98] transition-all ${
             podeComprarFiado
               ? 'bg-[#1E6B3A] text-[#F3EAD3] hover:bg-[#25814A] shadow-[#1E6B3A]/25'
               : 'bg-[#1C271E] text-[#6E7B70] cursor-not-allowed border border-[#26332A]'
           }`}
         >
-          <PlusCircle className="mr-3 h-6 w-6" />
-          REGISTRAR CONSUMO FIADO
+          <PlusCircle className="mr-2.5 h-6 w-6" />
+          REGISTRAR CONSUMO
         </Button>
-        {!podeComprarFiado && (
-          <p className="mt-1.5 text-center text-[11px] text-red-400">
-            {cliente.restricao_ativa
-              ? 'Bloqueado por restrição operacional "Não vender fiado".'
-              : 'Bloqueado por política de limite.'}
-          </p>
-        )}
       </div>
+
+      {!podeComprarFiado && (
+        <p className="mt-1.5 text-center text-[11px] text-red-400">
+          {cliente.restricao_ativa
+            ? 'Consumo bloqueado por "Não vender fiado". Recebimento de pagamento liberado.'
+            : 'Consumo bloqueado por política de limite. Recebimento de pagamento liberado.'}
+        </p>
+      )}
 
       {/* PAINEL DE SITUAÇÃO FINANCEIRA: Dívida, Crédito, Posição Líquida e Limite */}
       <div className="mt-5 rounded-2xl border border-[#26332A] bg-[#141B15] p-4">
@@ -295,12 +401,12 @@ export const FiadoFichaCliente = () => {
           <div className="rounded-xl border border-[#26332A] bg-[#0B0F0C] p-3">
             <div className="flex items-center gap-1.5 text-[#A8B3A6] text-xs">
               <TrendingDown className="h-3.5 w-3.5 text-red-400" />
-              <span>Dívida Consumos</span>
+              <span>Dívida em Aberto</span>
             </div>
             <p className="mt-1 text-lg font-bold text-red-300">
-              {formatCentavos(situacao?.totalDividaCentavos ?? 0)}
+              {formatCentavos(situacao?.saldoDevedorCentavos ?? 0)}
             </p>
-            <span className="text-[10px] text-[#6E7B70]">Soma dos fiados em aberto</span>
+            <span className="text-[10px] text-[#6E7B70]">Fiado pendente de quitação</span>
           </div>
 
           {/* Card: Crédito Disponível */}
@@ -312,33 +418,19 @@ export const FiadoFichaCliente = () => {
             <p className="mt-1 text-lg font-bold text-emerald-300">
               {formatCentavos(situacao?.totalCreditoDisponivelCentavos ?? 0)}
             </p>
-            <span className="text-[10px] text-[#6E7B70]">Adiantamentos e sobras</span>
+            <span className="text-[10px] text-[#6E7B70]">Sobras de pagamentos</span>
           </div>
 
-          {/* Card: Posição Líquida */}
+          {/* Card: Total Já Pago */}
           <div className="rounded-xl border border-[#26332A] bg-[#0B0F0C] p-3">
             <div className="flex items-center gap-1.5 text-[#A8B3A6] text-xs">
-              <Scale className="h-3.5 w-3.5 text-[#F2B705]" />
-              <span>Posição Líquida</span>
+              <ArrowDownCircle className="h-3.5 w-3.5 text-blue-400" />
+              <span>Total Pago</span>
             </div>
-            <p
-              className={`mt-1 text-lg font-bold ${
-                (situacao?.posicaoLiquidaCentavos ?? 0) > 0
-                  ? 'text-[#F3EAD3]'
-                  : (situacao?.posicaoLiquidaCentavos ?? 0) < 0
-                    ? 'text-emerald-400'
-                    : 'text-[#A8B3A6]'
-              }`}
-            >
-              {formatCentavos(situacao?.posicaoLiquidaCentavos ?? 0)}
+            <p className="mt-1 text-lg font-bold text-blue-200">
+              {formatCentavos(situacao?.totalPagoCentavos ?? 0)}
             </p>
-            <span className="text-[10px] text-[#6E7B70]">
-              {(situacao?.posicaoLiquidaCentavos ?? 0) > 0
-                ? 'Saldo devedor líquido'
-                : (situacao?.posicaoLiquidaCentavos ?? 0) < 0
-                  ? 'Crédito líquido a favor'
-                  : 'Zerado'}
-            </span>
+            <span className="text-[10px] text-[#6E7B70]">Soma de recebimentos ativos</span>
           </div>
 
           {/* Card: Limite e Capacidade */}
@@ -357,7 +449,7 @@ export const FiadoFichaCliente = () => {
                 ? 'Livre para compras'
                 : cliente.limite_centavos === 0
                   ? 'Não autorizado'
-                  : `Resta: ${formatCentavos(situacao?.disponivelParaFiadoCentavos)}`}
+                  : `Disponível: ${formatCentavos(situacao?.disponivelParaFiadoCentavos)}`}
             </span>
           </div>
         </div>
@@ -398,16 +490,28 @@ export const FiadoFichaCliente = () => {
                 {historico.map((item) => (
                   <div
                     key={item.id}
-                    className="rounded-xl border border-[#26332A] bg-[#141B15] p-3 transition-colors hover:border-[#334637]"
+                    className={`rounded-xl border p-3 transition-colors ${
+                      item.status === 'cancelado'
+                        ? 'border-gray-800 bg-[#101311] opacity-60'
+                        : item.tipo === 'pagamento'
+                          ? 'border-emerald-900/70 bg-[#121c15] hover:border-emerald-700/80'
+                          : item.tipo === 'credito'
+                            ? 'border-amber-900/50 bg-[#181611]'
+                            : 'border-[#26332A] bg-[#141B15] hover:border-[#334637]'
+                    }`}
                   >
                     <div className="flex items-start justify-between gap-2">
                       <div>
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 flex-wrap">
                           <span
                             className={`rounded-md px-2 py-0.5 text-[11px] font-bold ${
-                              item.tipo === 'consumo'
-                                ? 'bg-red-950/80 text-red-300 border border-red-900/60'
-                                : 'bg-emerald-950/80 text-emerald-300 border border-emerald-900/60'
+                              item.status === 'cancelado'
+                                ? 'bg-gray-800 text-gray-400 line-through'
+                                : item.tipo === 'consumo'
+                                  ? 'bg-red-950/80 text-red-300 border border-red-900/60'
+                                  : item.tipo === 'pagamento'
+                                    ? 'bg-emerald-950 text-emerald-300 border border-emerald-800'
+                                    : 'bg-amber-950 text-amber-300 border border-amber-800'
                             }`}
                           >
                             {item.origem}
@@ -415,6 +519,11 @@ export const FiadoFichaCliente = () => {
                           <span className="text-xs font-semibold text-[#A8B3A6]">
                             Data: {formatDateBR(item.data_movimento)}
                           </span>
+                          {item.status === 'cancelado' && (
+                            <Badge variant="destructive" className="text-[10px] py-0 px-1.5">
+                              CANCELADO
+                            </Badge>
+                          )}
                         </div>
 
                         {item.descricao && (
@@ -427,12 +536,46 @@ export const FiadoFichaCliente = () => {
                       <div className="text-right">
                         <p
                           className={`text-base font-bold ${
-                            item.tipo === 'consumo' ? 'text-red-300' : 'text-emerald-300'
+                            item.status === 'cancelado'
+                              ? 'text-gray-400 line-through'
+                              : item.tipo === 'consumo'
+                                ? 'text-red-300'
+                                : item.tipo === 'pagamento'
+                                  ? 'text-emerald-300'
+                                  : 'text-amber-300'
                           }`}
                         >
-                          {item.tipo === 'consumo' ? '+ ' : '- '}
+                          {item.tipo === 'consumo' ? '+ ' : item.tipo === 'pagamento' ? '- ' : ''}
                           {formatCentavos(item.valor_centavos)}
                         </p>
+
+                        {/* Ações para pagamentos ativos: Editar e Cancelar */}
+                        {item.tipo === 'pagamento' && item.status === 'ativo' && (
+                          <div className="mt-1.5 flex items-center justify-end gap-1">
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => abrirEdicaoPagamento(item)}
+                              className="h-7 px-2 text-[11px] font-semibold text-[#A8B3A6] hover:bg-[#1C271E] hover:text-[#F3EAD3]"
+                              title="Corrigir valor, forma ou data"
+                            >
+                              <Pencil className="mr-1 h-3 w-3" />
+                              Editar
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => setPagamentoParaCancelar(item)}
+                              className="h-7 px-2 text-[11px] font-semibold text-red-400 hover:bg-red-950/40 hover:text-red-300"
+                              title="Cancelar pagamento"
+                            >
+                              <Ban className="mr-1 h-3 w-3" />
+                              Cancelar
+                            </Button>
+                          </div>
+                        )}
                       </div>
                     </div>
 
@@ -481,7 +624,7 @@ export const FiadoFichaCliente = () => {
                         <strong className="text-[#F3EAD3]">{log.alterado_por_nome}</strong>
                       </p>
 
-                      {/* Resumo das alterações de limite ou restrição */}
+                      {/* Resumo das alterações */}
                       <div className="mt-2 space-y-1 rounded-lg bg-[#0B0F0C] p-2 text-[11px]">
                         {antigos.limite_centavos !== novos.limite_centavos && (
                           <p className="text-[#A8B3A6]">
@@ -516,6 +659,34 @@ export const FiadoFichaCliente = () => {
                           </p>
                         )}
 
+                        {antigos.valor_centavos !== novos.valor_centavos && (
+                          <p className="text-[#A8B3A6]">
+                            • Valor alterado de{' '}
+                            <span className="font-semibold text-yellow-400">
+                              {formatCentavos(antigos.valor_centavos as number)}
+                            </span>{' '}
+                            para{' '}
+                            <span className="font-semibold text-emerald-400">
+                              {formatCentavos(novos.valor_centavos as number)}
+                            </span>
+                          </p>
+                        )}
+
+                        {antigos.status !== novos.status && (
+                          <p className="text-[#A8B3A6]">
+                            • Status alterado de "{String(antigos.status)}" para{' '}
+                            <span className="font-semibold text-red-400">
+                              "{String(novos.status)}"
+                            </span>
+                          </p>
+                        )}
+
+                        {antigos.forma !== novos.forma && (
+                          <p className="text-[#A8B3A6]">
+                            • Forma de pagamento: {String(antigos.forma)} → {String(novos.forma)}
+                          </p>
+                        )}
+
                         {antigos.nome !== novos.nome && (
                           <p className="text-[#A8B3A6]">
                             • Nome: "{String(antigos.nome)}" → "{String(novos.nome)}"
@@ -537,6 +708,223 @@ export const FiadoFichaCliente = () => {
           </TabsContent>
         </Tabs>
       </div>
+
+      {/* MODAL 1: EDIÇÃO DE PAGAMENTO (Regra 16) */}
+      <Dialog
+        open={Boolean(pagamentoParaEditar)}
+        onOpenChange={(aberto) => !aberto && setPagamentoParaEditar(null)}
+      >
+        <DialogContent className="border-[#26332A] bg-[#141B15] text-[#F3EAD3] sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-lg font-bold text-[#F3EAD3]">
+              Editar Pagamento do Fiado
+            </DialogTitle>
+            <DialogDescription className="text-xs text-[#A8B3A6]">
+              Permite corrigir valor digitado incorretamente, forma ou data do recebimento. Não cria
+              novo pagamento; atualiza o registro existente e preserva histórico.
+            </DialogDescription>
+          </DialogHeader>
+
+          {pagamentoParaEditar && (
+            <form
+              onSubmit={(e) => {
+                e.preventDefault()
+                editarMutation.mutate()
+              }}
+              className="space-y-3.5 text-xs"
+            >
+              <div className="rounded-xl border border-[#26332A] bg-[#0B0F0C] p-3 space-y-1">
+                <div className="flex justify-between">
+                  <span className="text-[#A8B3A6]">Valor registrado anteriormente:</span>
+                  <strong className="text-white">
+                    {formatCentavos(pagamentoParaEditar.valor_centavos)}
+                  </strong>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-[#A8B3A6]">Forma original:</span>
+                  <span>{pagamentoParaEditar.forma || 'Não especificada'}</span>
+                </div>
+              </div>
+
+              {/* Novo Valor */}
+              <div className="space-y-1">
+                <Label htmlFor="editValor" className="text-xs font-bold text-[#F3EAD3]">
+                  Novo Valor Recebido (R$) *
+                </Label>
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm font-bold text-[#1E6B3A]">
+                    R$
+                  </span>
+                  <Input
+                    id="editValor"
+                    type="text"
+                    inputMode="decimal"
+                    required
+                    value={editValorInput}
+                    onChange={(e) => setEditValorInput(e.target.value)}
+                    className="h-11 rounded-xl border-[#26332A] bg-[#0B0F0C] pl-10 text-base font-bold text-[#F3EAD3]"
+                  />
+                </div>
+              </div>
+
+              {/* Nova Forma */}
+              <div className="space-y-1">
+                <Label className="text-xs font-bold text-[#F3EAD3]">Forma de Pagamento *</Label>
+                <RadioGroup
+                  value={editForma}
+                  onValueChange={(val: FormaPagamento) => setEditForma(val)}
+                  className="grid grid-cols-2 gap-2"
+                >
+                  <label
+                    className={`flex items-center gap-2 rounded-lg border p-2 cursor-pointer ${
+                      editForma === 'dinheiro'
+                        ? 'border-[#1E6B3A] bg-[#1C271E] text-white'
+                        : 'border-[#26332A] bg-[#0B0F0C] text-[#A8B3A6]'
+                    }`}
+                  >
+                    <RadioGroupItem value="dinheiro" className="sr-only" />
+                    <span>Dinheiro</span>
+                  </label>
+                  <label
+                    className={`flex items-center gap-2 rounded-lg border p-2 cursor-pointer ${
+                      editForma === 'pix'
+                        ? 'border-[#1E6B3A] bg-[#1C271E] text-white'
+                        : 'border-[#26332A] bg-[#0B0F0C] text-[#A8B3A6]'
+                    }`}
+                  >
+                    <RadioGroupItem value="pix" className="sr-only" />
+                    <span>Pix</span>
+                  </label>
+                  <label
+                    className={`flex items-center gap-2 rounded-lg border p-2 cursor-pointer ${
+                      editForma === 'cartao_debito'
+                        ? 'border-[#1E6B3A] bg-[#1C271E] text-white'
+                        : 'border-[#26332A] bg-[#0B0F0C] text-[#A8B3A6]'
+                    }`}
+                  >
+                    <RadioGroupItem value="cartao_debito" className="sr-only" />
+                    <span>Cartão Débito</span>
+                  </label>
+                  <label
+                    className={`flex items-center gap-2 rounded-lg border p-2 cursor-pointer ${
+                      editForma === 'cartao_credito'
+                        ? 'border-[#1E6B3A] bg-[#1C271E] text-white'
+                        : 'border-[#26332A] bg-[#0B0F0C] text-[#A8B3A6]'
+                    }`}
+                  >
+                    <RadioGroupItem value="cartao_credito" className="sr-only" />
+                    <span>Cartão Crédito</span>
+                  </label>
+                </RadioGroup>
+              </div>
+
+              {/* Nova Data de Movimento */}
+              <div className="space-y-1">
+                <Label htmlFor="editData" className="text-xs font-bold text-[#F3EAD3]">
+                  Data do Recebimento *
+                </Label>
+                <Input
+                  id="editData"
+                  type="date"
+                  required
+                  value={editDataMovimento}
+                  onChange={(e) => setEditDataMovimento(e.target.value)}
+                  className="h-10 rounded-xl border-[#26332A] bg-[#0B0F0C] text-sm text-[#F3EAD3]"
+                />
+              </div>
+
+              <DialogFooter className="flex flex-col-reverse sm:flex-row gap-2 pt-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setPagamentoParaEditar(null)}
+                  className="rounded-xl border-[#26332A] bg-[#0B0F0C] text-[#F3EAD3]"
+                >
+                  CANCELAR
+                </Button>
+                <Button
+                  type="submit"
+                  disabled={editarMutation.isPending}
+                  className="rounded-xl bg-[#1E6B3A] font-bold text-[#F3EAD3] hover:bg-[#25814A]"
+                >
+                  {editarMutation.isPending ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    'CONFIRMAR CORREÇÃO'
+                  )}
+                </Button>
+              </DialogFooter>
+            </form>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* MODAL 2: CANCELAMENTO DE PAGAMENTO (Regra 17) */}
+      <Dialog
+        open={Boolean(pagamentoParaCancelar)}
+        onOpenChange={(aberto) => !aberto && setPagamentoParaCancelar(null)}
+      >
+        <DialogContent className="border-[#26332A] bg-[#141B15] text-[#F3EAD3] sm:max-w-md">
+          <DialogHeader>
+            <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-red-950/60 text-red-400 border border-red-800">
+              <Ban className="h-6 w-6" />
+            </div>
+            <DialogTitle className="text-center text-lg font-bold text-[#F3EAD3] mt-2">
+              Cancelar Pagamento?
+            </DialogTitle>
+            <DialogDescription className="text-center text-xs text-[#A8B3A6]">
+              A dívida quitada por este pagamento será restaurada e o recebimento financeiro será
+              desfeito. O registro histórico é preservado na auditoria.
+            </DialogDescription>
+          </DialogHeader>
+
+          {pagamentoParaCancelar && (
+            <div className="space-y-2 rounded-xl border border-[#26332A] bg-[#0B0F0C] p-3 text-xs">
+              <div className="flex justify-between py-1 border-b border-[#1C271E]">
+                <span className="text-[#A8B3A6]">Cliente:</span>
+                <strong className="text-[#F3EAD3]">{cliente.nome}</strong>
+              </div>
+              <div className="flex justify-between py-1 border-b border-[#1C271E]">
+                <span className="text-[#A8B3A6]">Valor do pagamento:</span>
+                <strong className="text-red-300">
+                  {formatCentavos(pagamentoParaCancelar.valor_centavos)}
+                </strong>
+              </div>
+              <div className="flex justify-between py-1 border-b border-[#1C271E]">
+                <span className="text-[#A8B3A6]">Forma:</span>
+                <span>{pagamentoParaCancelar.forma || 'Não especificada'}</span>
+              </div>
+              <div className="flex justify-between py-1">
+                <span className="text-[#A8B3A6]">Data do recebimento:</span>
+                <span>{formatDateBR(pagamentoParaCancelar.data_movimento)}</span>
+              </div>
+            </div>
+          )}
+
+          <DialogFooter className="flex flex-col-reverse sm:flex-row gap-2 mt-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setPagamentoParaCancelar(null)}
+              className="rounded-xl border-[#26332A] bg-[#0B0F0C] text-[#F3EAD3]"
+            >
+              NÃO, MANTER PAGAMENTO
+            </Button>
+            <Button
+              type="button"
+              onClick={() => cancelarMutation.mutate()}
+              disabled={cancelarMutation.isPending}
+              className="rounded-xl bg-red-700 font-bold text-white hover:bg-red-600"
+            >
+              {cancelarMutation.isPending ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                'SIM, CANCELAR PAGAMENTO'
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Layout>
   )
 }

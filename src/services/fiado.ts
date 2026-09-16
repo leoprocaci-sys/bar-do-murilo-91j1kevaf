@@ -4,8 +4,10 @@ import type {
   Cliente,
   Consumo,
   Credito,
+  FormaPagamento,
   HistoricoAuditoria,
   MovimentacaoHistorico,
+  Pagamento,
   SituacaoFinanceiraCliente,
 } from '@/types/fiado'
 
@@ -198,46 +200,26 @@ export const toggleFavoritoCliente = async (
 export const getSituacaoFinanceiraCliente = async (
   cliente: Cliente,
 ): Promise<SituacaoFinanceiraCliente> => {
-  // 1. Busca todos os consumos ativos do cliente
-  const { data: consumosData, error: consumosError } = await database
-    .from('consumos')
-    .select('valor_centavos')
-    .eq('cliente_id', cliente.id)
-    .eq('status', 'ativo')
+  // Executa a função RPC calcular_posicao_cliente para integridade contábil idêntica
+  const { data: posData, error: posError } = await database.rpc('calcular_posicao_cliente', {
+    p_cliente_id: cliente.id,
+  })
 
-  if (consumosError) throw consumosError
-
-  const totalDividaCentavos = (consumosData ?? []).reduce(
-    (acc: number, curr: { valor_centavos: number }) => acc + Number(curr.valor_centavos),
-    0,
-  )
-
-  // 2. Busca créditos do cliente
-  const { data: creditosData, error: creditosError } = await database
-    .from('creditos')
-    .select('tipo, valor_centavos')
-    .eq('cliente_id', cliente.id)
-    .eq('status', 'ativo')
-
-  if (creditosError) throw creditosError
-
-  let creditosOrigem = 0
-  let creditosUtilizacao = 0
-  let creditosDevolucao = 0
-
-  for (const c of creditosData ?? []) {
-    const val = Number(c.valor_centavos)
-    if (c.tipo === 'origem') creditosOrigem += val
-    else if (c.tipo === 'utilizacao') creditosUtilizacao += val
-    else if (c.tipo === 'devolucao') creditosDevolucao += val
+  if (posError) {
+    // Fallback caso RPC falhe
+    console.error('Erro ao chamar calcular_posicao_cliente:', posError)
   }
 
-  const totalCreditoDisponivelCentavos = Math.max(
-    0,
-    creditosOrigem - creditosUtilizacao - creditosDevolucao,
-  )
+  const pos = Array.isArray(posData) && posData[0] ? posData[0] : null
 
-  const posicaoLiquidaCentavos = totalDividaCentavos - totalCreditoDisponivelCentavos
+  const totalDividaCentavos = pos ? Number(pos.total_divida) : 0
+  const totalPagoCentavos = pos ? Number(pos.total_pago) : 0
+  const saldoDevedorCentavos = pos ? Number(pos.saldo_devedor) : 0
+  const totalCreditoOrigemCentavos = pos ? Number(pos.credito_origem) : 0
+  const totalCreditoUtilizadoCentavos = pos ? Number(pos.credito_utilizado) : 0
+  const totalCreditoDisponivelCentavos = pos ? Number(pos.credito_disponivel) : 0
+
+  const posicaoLiquidaCentavos = saldoDevedorCentavos - totalCreditoDisponivelCentavos
 
   // 3. Cálculo da capacidade de fiado
   let disponivelParaFiadoCentavos: number | null = null
@@ -247,15 +229,17 @@ export const getSituacaoFinanceiraCliente = async (
     disponivelParaFiadoCentavos = 0
   } else {
     // Limite positivo
-    // A regra: quando houver crédito disponível, ele é considerado ANTES da incidência do limite.
-    // Dívida líquida que consome limite = Math.max(0, totalDividaCentavos - totalCreditoDisponivelCentavos)
-    const dividaQueConsomeLimite = Math.max(0, totalDividaCentavos - totalCreditoDisponivelCentavos)
-    disponivelParaFiadoCentavos = Math.max(0, cliente.limite_centavos - dividaQueConsomeLimite)
+    // Capacidade restante no limite = Math.max(0, limite_centavos - saldoDevedorCentavos)
+    disponivelParaFiadoCentavos = Math.max(0, cliente.limite_centavos - saldoDevedorCentavos)
   }
 
   return {
     totalDividaCentavos,
+    totalPagoCentavos,
+    saldoDevedorCentavos,
     totalCreditoDisponivelCentavos,
+    totalCreditoOrigemCentavos,
+    totalCreditoUtilizadoCentavos,
     posicaoLiquidaCentavos,
     limiteCentavos: cliente.limite_centavos,
     temRestricao: cliente.restricao_ativa,
@@ -283,11 +267,24 @@ export const getHistoricoCliente = async (clienteId: string): Promise<Movimentac
 
   if (errConsumos) throw errConsumos
 
+  // Pagamentos
+  const { data: pagamentosData, error: errPagamentos } = await database
+    .from('pagamentos')
+    .select(`
+      id, valor_centavos, forma, data_movimento, data_registro, status, registrado_por, credito_id,
+      registrado_por_user:app_users!pagamentos_registrado_por_fkey (nome)
+    `)
+    .eq('cliente_id', clienteId)
+    .order('data_movimento', { ascending: false })
+    .order('data_registro', { ascending: false })
+
+  if (errPagamentos) throw errPagamentos
+
   // Créditos
   const { data: creditosData, error: errCreditos } = await database
     .from('creditos')
     .select(`
-      id, tipo, valor_centavos, data_movimento, data_registro, status, registrado_por,
+      id, tipo, valor_centavos, data_movimento, data_registro, status, registrado_por, origem_pagamento_id, movimento_vinculado_id,
       registrado_por_user:app_users!creditos_registrado_por_fkey (nome)
     `)
     .eq('cliente_id', clienteId)
@@ -298,6 +295,7 @@ export const getHistoricoCliente = async (clienteId: string): Promise<Movimentac
 
   const lista: MovimentacaoHistorico[] = []
 
+  // Mapeia consumos
   for (const c of (consumosData as any[]) ?? []) {
     const nomeResp = Array.isArray(c.registrado_por_user)
       ? c.registrado_por_user[0]?.nome
@@ -316,11 +314,48 @@ export const getHistoricoCliente = async (clienteId: string): Promise<Movimentac
     })
   }
 
+  // Mapeia pagamentos
+  for (const p of (pagamentosData as any[]) ?? []) {
+    const nomeResp = Array.isArray(p.registrado_por_user)
+      ? p.registrado_por_user[0]?.nome
+      : p.registrado_por_user?.nome
+
+    let formaLabel = p.forma
+    if (p.forma === 'dinheiro') formaLabel = 'Dinheiro'
+    else if (p.forma === 'pix') formaLabel = 'Pix'
+    else if (p.forma === 'cartao_debito') formaLabel = 'Cartão de Débito'
+    else if (p.forma === 'cartao_credito') formaLabel = 'Cartão de Crédito'
+
+    lista.push({
+      id: p.id,
+      tipo: 'pagamento',
+      origem: `Pagamento (${formaLabel})`,
+      valor_centavos: Number(p.valor_centavos),
+      descricao: p.credito_id ? `Recebimento fiado (gerou crédito excedente)` : `Recebimento fiado`,
+      forma: p.forma,
+      data_movimento: p.data_movimento,
+      data_registro: p.data_registro,
+      registrado_por: p.registrado_por,
+      registrado_por_nome: nomeResp || 'Administrador',
+      status: p.status,
+      credito_id: p.credito_id,
+    })
+  }
+
+  // Mapeia créditos
   for (const cr of (creditosData as any[]) ?? []) {
     let origemLabel = 'Crédito'
-    if (cr.tipo === 'origem') origemLabel = 'Crédito Adicionado'
-    else if (cr.tipo === 'utilizacao') origemLabel = 'Crédito Utilizado'
-    else if (cr.tipo === 'devolucao') origemLabel = 'Crédito Devolvido'
+    let desc = 'Operação de crédito'
+    if (cr.tipo === 'origem') {
+      origemLabel = 'Crédito Gerado (Excedente)'
+      desc = 'Crédito originado por pagamento superior à dívida'
+    } else if (cr.tipo === 'utilizacao') {
+      origemLabel = 'Crédito Utilizado em Consumo'
+      desc = 'Abatimento automático em consumo fiado'
+    } else if (cr.tipo === 'devolucao') {
+      origemLabel = 'Crédito Devolvido'
+      desc = 'Devolução de crédito ao cliente'
+    }
 
     const nomeResp = Array.isArray(cr.registrado_por_user)
       ? cr.registrado_por_user[0]?.nome
@@ -331,7 +366,7 @@ export const getHistoricoCliente = async (clienteId: string): Promise<Movimentac
       tipo: 'credito',
       origem: origemLabel,
       valor_centavos: Number(cr.valor_centavos),
-      descricao: `Operação de crédito: ${cr.tipo}`,
+      descricao: desc,
       data_movimento: cr.data_movimento,
       data_registro: cr.data_registro,
       registrado_por: cr.registrado_por,
@@ -461,22 +496,25 @@ export const validarAutorizacaoConsumo = (
 
   // CASO D — limite positivo:
   // Considera crédito disponível ANTES da incidência do limite
-  // Dívida líquida atual que consome limite:
-  const dividaComprometida = Math.max(
-    0,
-    situacao.totalDividaCentavos - situacao.totalCreditoDisponivelCentavos,
-  )
-  const capacidadeDisponivel = Math.max(0, situacao.limiteCentavos - dividaComprometida)
+  // Parcela coberta por crédito:
+  const cobertoPorCredito = Math.min(situacao.totalCreditoDisponivelCentavos, novoConsumoCentavos)
+  const novaDividaLiquida = novoConsumoCentavos - cobertoPorCredito
 
-  if (novoConsumoCentavos > capacidadeDisponivel) {
-    const excedente = novoConsumoCentavos - capacidadeDisponivel
+  // Saldo devedor atual que já consome limite
+  const saldoDevedorAtual =
+    situacao.saldoDevedorCentavos ??
+    Math.max(0, situacao.totalDividaCentavos - situacao.totalCreditoDisponivelCentavos)
+  const capacidadeDisponivel = Math.max(0, situacao.limiteCentavos - saldoDevedorAtual)
+
+  if (novaDividaLiquida > capacidadeDisponivel) {
+    const excedente = novaDividaLiquida - capacidadeDisponivel
     return {
       permitido: false,
       motivo: 'limite_excedido',
       mensagem: `O consumo excede a capacidade de limite do cliente em R$ ${(excedente / 100).toFixed(2).replace('.', ',')}.`,
       detalhes: {
         limiteCentavos: situacao.limiteCentavos,
-        comprometidoCentavos: dividaComprometida,
+        comprometidoCentavos: saldoDevedorAtual,
         creditoCentavos: situacao.totalCreditoDisponivelCentavos,
         novoConsumoCentavos,
         excedenteCentavos: excedente,
@@ -488,26 +526,120 @@ export const validarAutorizacaoConsumo = (
 }
 
 /**
- * Cria o consumo com request_id (idempotência) e registrado_por
+ * Cria o consumo com request_id (idempotência) e utiliza crédito disponível via RPC atômica
  */
 export const registrarConsumo = async (
   input: RegistrarConsumoInput,
-  userId: string,
+  _userId: string,
 ): Promise<Consumo> => {
   const requestId = crypto.randomUUID()
 
-  const payload = {
+  const { data, error } = await database.rpc('registrar_consumo_com_credito', {
+    p_cliente_id: input.cliente_id,
+    p_valor_centavos: input.valor_centavos,
+    p_data_movimento: input.data_movimento,
+    p_descricao: input.descricao?.trim() || null,
+    p_request_id: requestId,
+  })
+
+  if (error) throw error
+
+  // Busca o consumo recém-criado
+  const consumoId = data?.consumo_id
+  if (consumoId) {
+    const { data: rec, error: getErr } = await database
+      .from('consumos')
+      .select('*')
+      .eq('id', consumoId)
+      .single()
+    if (!getErr && rec) return rec as Consumo
+  }
+
+  return {
+    id: consumoId || requestId,
     cliente_id: input.cliente_id,
     valor_centavos: input.valor_centavos,
     descricao: input.descricao?.trim() || null,
     data_movimento: input.data_movimento,
-    registrado_por: userId,
-    request_id: requestId,
+    data_registro: new Date().toISOString(),
+    registrado_por: _userId,
     status: 'ativo',
+    request_id: requestId,
+    seq: 0,
   }
+}
 
-  const { data, error } = await database.from('consumos').insert(payload).select().single()
+/**
+ * Registra pagamento atômico do fiado com verificação de excedente e geração de crédito
+ */
+export type RegistrarPagamentoInput = {
+  cliente_id: string
+  valor_centavos: number
+  forma: FormaPagamento
+  data_movimento: string
+}
+
+export type RegistrarPagamentoResult = {
+  pagamento_id: string
+  credito_id: string | null
+  valor_centavos: number
+  credito_gerado_centavos: number
+  saldo_devedor_anterior: number
+  saldo_devedor_atual: number
+  idempotente: boolean
+}
+
+export const registrarPagamentoFiado = async (
+  input: RegistrarPagamentoInput,
+): Promise<RegistrarPagamentoResult> => {
+  const requestId = crypto.randomUUID()
+
+  const { data, error } = await database.rpc('registrar_pagamento_fiado', {
+    p_cliente_id: input.cliente_id,
+    p_valor_centavos: input.valor_centavos,
+    p_forma: input.forma,
+    p_data_movimento: input.data_movimento,
+    p_request_id: requestId,
+  })
 
   if (error) throw error
-  return data as Consumo
+  return data as RegistrarPagamentoResult
+}
+
+/**
+ * Edita pagamento fiado recalculando dívida, crédito vinculado e histórico
+ */
+export type EditarPagamentoInput = {
+  pagamento_id: string
+  novo_valor_centavos: number
+  nova_forma: FormaPagamento
+  nova_data_movimento: string
+}
+
+export const editarPagamentoFiado = async (input: EditarPagamentoInput): Promise<any> => {
+  const { data, error } = await database.rpc('editar_pagamento_fiado', {
+    p_pagamento_id: input.pagamento_id,
+    p_novo_valor_centavos: input.novo_valor_centavos,
+    p_nova_forma: input.nova_forma,
+    p_nova_data_movimento: input.nova_data_movimento,
+  })
+
+  if (error) throw error
+  return data
+}
+
+/**
+ * Cancela pagamento fiado desfazendo efeitos sobre dívida/crédito
+ */
+export const cancelarPagamentoFiado = async (
+  pagamentoId: string,
+  motivo?: string,
+): Promise<any> => {
+  const { data, error } = await database.rpc('cancelar_pagamento_fiado', {
+    p_pagamento_id: pagamentoId,
+    p_motivo: motivo || 'Cancelamento de pagamento',
+  })
+
+  if (error) throw error
+  return data
 }

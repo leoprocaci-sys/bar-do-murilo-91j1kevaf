@@ -16,6 +16,7 @@ import FiadoBloqueados from '@/pages/fiado/FiadoBloqueados'
 import FiadoClienteForm from '@/pages/fiado/FiadoClienteForm'
 import FiadoFichaCliente from '@/pages/fiado/FiadoFichaCliente'
 import FiadoConsumoForm from '@/pages/fiado/FiadoConsumoForm'
+import FiadoPagamentoForm from '@/pages/fiado/FiadoPagamentoForm'
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -96,6 +97,22 @@ const App = () => (
               element={
                 <Protected>
                   <FiadoConsumoForm />
+                </Protected>
+              }
+            />
+            <Route
+              path="/fiado/pagamento"
+              element={
+                <Protected>
+                  <FiadoPagamentoForm />
+                </Protected>
+              }
+            />
+            <Route
+              path="/fiado/cliente/:id/pagamento"
+              element={
+                <Protected>
+                  <FiadoPagamentoForm />
                 </Protected>
               }
             />

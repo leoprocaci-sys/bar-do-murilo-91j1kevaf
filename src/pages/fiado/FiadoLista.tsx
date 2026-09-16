@@ -10,6 +10,7 @@ import {
   RefreshCw,
   Phone,
   ShieldAlert,
+  CreditCard,
 } from 'lucide-react'
 import Layout from '@/components/Layout'
 import { Button } from '@/components/ui/button'
@@ -77,15 +78,27 @@ export const FiadoLista = () => {
       <div className="flex items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-[#F3EAD3]">Caderno do Fiado</h1>
-          <p className="text-sm text-[#A8B3A6]">Controle de clientes e consumos</p>
+          <p className="text-sm text-[#A8B3A6]">Controle de clientes, consumos e pagamentos</p>
         </div>
         <Button
           type="button"
           onClick={() => navigate('/fiado/novo')}
           className="h-11 rounded-xl bg-[#1E6B3A] px-4 font-bold text-[#F3EAD3] hover:bg-[#25814A] active:scale-[0.98]"
         >
-          <UserPlus className="mr-2 h-5 w-5" />
+          <UserPlus className="mr-1.5 h-5 w-5" />
           NOVO
+        </Button>
+      </div>
+
+      {/* Ação rápida de Receber Pagamento Fiado (Regra 6: Acesso obrigatório na tela inicial do Caderno do Fiado) */}
+      <div className="mt-3">
+        <Button
+          type="button"
+          onClick={() => navigate('/fiado/pagamento')}
+          className="h-13 w-full justify-center rounded-2xl border border-emerald-700/60 bg-emerald-950/40 text-base font-bold tracking-wide text-emerald-200 hover:bg-emerald-900/50 hover:border-emerald-600 active:scale-[0.98] transition-all"
+        >
+          <CreditCard className="mr-2.5 h-5 w-5 text-emerald-400" />
+          RECEBER PAGAMENTO DO FIADO
         </Button>
       </div>
 

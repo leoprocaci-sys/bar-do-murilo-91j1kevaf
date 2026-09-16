@@ -48,34 +48,51 @@ export type Credito = {
   registrado_por_nome?: string
 }
 
+export type FormaPagamento = 'dinheiro' | 'pix' | 'cartao_debito' | 'cartao_credito'
+
+export type Pagamento = {
+  id: string
+  cliente_id: string
+  valor_centavos: number
+  forma: FormaPagamento
+  data_movimento: string
+  data_registro: string
+  registrado_por: string
+  status: 'ativo' | 'cancelado'
+  request_id: string
+  seq: number
+  credito_id: string | null
+  registrado_por_nome?: string
+}
+
 export type MovimentacaoHistorico = {
   id: string
-  tipo: 'consumo' | 'credito'
-  origem: string // 'Consumo Fiado' | 'Crédito' etc.
+  tipo: 'consumo' | 'credito' | 'pagamento'
+  origem: string // 'Consumo Fiado' | 'Pagamento' | 'Crédito Adicionado' etc.
   valor_centavos: number
   descricao: string | null
+  forma?: FormaPagamento | null
   data_movimento: string
   data_registro: string
   registrado_por: string
   registrado_por_nome?: string
   status: 'ativo' | 'cancelado'
+  credito_id?: string | null
 }
 
 export type SituacaoFinanceiraCliente = {
   totalDividaCentavos: number // soma dos consumos ativos
+  totalPagoCentavos: number // soma dos pagamentos ativos
+  saldoDevedorCentavos: number // dívida real não paga nem coberta por crédito: max(0, divida - amortizado_pagos - credito_utilizado)
   totalCreditoDisponivelCentavos: number // crédito líquido: (origem - utilizacao - devolucao) ou 0 se negativo
-  posicaoLiquidaCentavos: number // divida - credito_disponivel (se positivo: deve; se negativo: tem sobra de crédito)
+  totalCreditoOrigemCentavos: number
+  totalCreditoUtilizadoCentavos: number
+  posicaoLiquidaCentavos: number // saldoDevedor - totalCreditoDisponivelCentavos
   limiteCentavos: number | null // null = sem limite; 0 = sem autorização; > 0 = valor
   temRestricao: boolean
   restricaoMotivo: string | null
   restricaoPorNome?: string
   restricaoEm?: string | null
-  // Capacidade disponível para compras fiadas considerando crédito:
-  // Se limite for null: null (sem teto monetário)
-  // Se limite for 0: 0 (bloqueado)
-  // Se limite positivo:
-  //   Dívida líquida consumindo limite = Math.max(0, totalDividaCentavos - totalCreditoDisponivelCentavos)
-  //   disponivel = Math.max(0, limiteCentavos - dividaLiquida)
   disponivelParaFiadoCentavos: number | null
 }
 
