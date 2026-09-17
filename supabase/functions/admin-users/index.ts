@@ -93,14 +93,33 @@ Deno.serve(async (req: Request) => {
       throw new HttpError(401, 'Sessão inválida. Entre novamente.', 'unauthorized')
     }
 
-    const { data: requester, error: requesterError } = await adminClient
+    const { data: requester, error: requesterError } = await authClient
       .from('app_users')
       .select('id, ativo, perfil')
       .eq('id', authData.user.id)
       .maybeSingle()
 
     if (requesterError || !requester || !requester.ativo || requester.perfil !== 'administrador') {
-      throw new HttpError(403, 'Acesso administrativo não autorizado.', 'forbidden')
+      // Fallback usando o adminClient caso o contexto do usuário apresente divergência
+      const { data: adminRequester, error: adminRequesterError } = await adminClient
+        .from('app_users')
+        .select('id, ativo, perfil')
+        .eq('id', authData.user.id)
+        .maybeSingle()
+
+      if (
+        adminRequesterError ||
+        !adminRequester ||
+        !adminRequester.ativo ||
+        adminRequester.perfil !== 'administrador'
+      ) {
+        console.error('Falha na autorização administrativa:', {
+          userId: authData.user.id,
+          requesterError,
+          adminRequesterError,
+        })
+        throw new HttpError(403, 'Acesso administrativo não autorizado.', 'forbidden')
+      }
     }
 
     const body = (await req.json()) as RequestBody

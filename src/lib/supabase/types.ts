@@ -621,6 +621,16 @@ export type Database = {
         }
         Returns: Json
       }
+      registrar_devolucao_credito: {
+        Args: {
+          p_cliente_id: string
+          p_data_movimento: string
+          p_forma_devolucao: string
+          p_request_id?: string
+          p_valor_centavos: number
+        }
+        Returns: Json
+      }
       registrar_pagamento_fiado: {
         Args: {
           p_cliente_id: string
