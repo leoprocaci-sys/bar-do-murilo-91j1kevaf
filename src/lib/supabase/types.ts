@@ -566,6 +566,22 @@ export type Database = {
           isSetofReturn: false
         }
       }
+      calcular_posicao_cliente: {
+        Args: { p_cliente_id: string }
+        Returns: {
+          credito_devolvido: number
+          credito_disponivel: number
+          credito_origem: number
+          credito_utilizado: number
+          saldo_devedor: number
+          total_divida: number
+          total_pago: number
+        }[]
+      }
+      cancelar_pagamento_fiado: {
+        Args: { p_motivo?: string; p_pagamento_id: string }
+        Returns: Json
+      }
       complete_first_access: {
         Args: never
         Returns: {
@@ -585,7 +601,36 @@ export type Database = {
           isSetofReturn: false
         }
       }
+      editar_pagamento_fiado: {
+        Args: {
+          p_nova_data_movimento: string
+          p_nova_forma: string
+          p_novo_valor_centavos: number
+          p_pagamento_id: string
+        }
+        Returns: Json
+      }
       is_active_admin: { Args: { p_user_id?: string }; Returns: boolean }
+      registrar_consumo_com_credito: {
+        Args: {
+          p_cliente_id: string
+          p_data_movimento: string
+          p_descricao?: string
+          p_request_id?: string
+          p_valor_centavos: number
+        }
+        Returns: Json
+      }
+      registrar_pagamento_fiado: {
+        Args: {
+          p_cliente_id: string
+          p_data_movimento: string
+          p_forma: string
+          p_request_id?: string
+          p_valor_centavos: number
+        }
+        Returns: Json
+      }
     }
     Enums: {
       [_ in never]: never
