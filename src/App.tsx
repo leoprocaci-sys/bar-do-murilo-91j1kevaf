@@ -7,7 +7,14 @@ import { AuthProvider } from '@/hooks/use-auth'
 import Index from '@/pages/Index'
 import Login from '@/pages/Login'
 import PrimeiroAcesso from '@/pages/PrimeiroAcesso'
-import PlaceholderFinanceiro from '@/pages/PlaceholderFinanceiro'
+import CaixaHome from '@/pages/caixa/CaixaHome'
+import CaixaVendaForm from '@/pages/caixa/CaixaVendaForm'
+import CaixaSaidaForm from '@/pages/caixa/CaixaSaidaForm'
+import CaixaRetiradaForm from '@/pages/caixa/CaixaRetiradaForm'
+import CaixaDevolucaoCreditoForm from '@/pages/caixa/CaixaDevolucaoCreditoForm'
+import CaixaMovimentacaoDia from '@/pages/caixa/CaixaMovimentacaoDia'
+import CaixaRelatorios from '@/pages/caixa/CaixaRelatorios'
+import CaixaConsumoPessoa from '@/pages/caixa/CaixaConsumoPessoa'
 import Usuarios from '@/pages/Usuarios'
 import NovoUsuario from '@/pages/NovoUsuario'
 import NotFound from '@/pages/NotFound'
@@ -120,7 +127,63 @@ const App = () => (
               path="/caixa"
               element={
                 <Protected>
-                  <PlaceholderFinanceiro modulo="CAIXA" />
+                  <CaixaHome />
+                </Protected>
+              }
+            />
+            <Route
+              path="/caixa/venda"
+              element={
+                <Protected>
+                  <CaixaVendaForm />
+                </Protected>
+              }
+            />
+            <Route
+              path="/caixa/saida"
+              element={
+                <Protected>
+                  <CaixaSaidaForm />
+                </Protected>
+              }
+            />
+            <Route
+              path="/caixa/retirada"
+              element={
+                <Protected>
+                  <CaixaRetiradaForm />
+                </Protected>
+              }
+            />
+            <Route
+              path="/caixa/devolucao-credito"
+              element={
+                <Protected>
+                  <CaixaDevolucaoCreditoForm />
+                </Protected>
+              }
+            />
+            <Route
+              path="/caixa/movimentacao"
+              element={
+                <Protected>
+                  <CaixaMovimentacaoDia />
+                </Protected>
+              }
+            />
+            <Route
+              path="/caixa/relatorios"
+              element={
+                <Protected>
+                  <CaixaRelatorios />
+                </Protected>
+              }
+            />
+            <Route
+              path="/caixa/consumo-pessoa"
+              element={
+                <Protected>
+                  <CaixaConsumoPessoa />
                 </Protected>
               }
             />
