@@ -643,3 +643,52 @@ export const cancelarPagamentoFiado = async (
   if (error) throw error
   return data
 }
+
+/**
+ * Edita consumo fiado com suporte a correção de valor, descrição, data e troca de cliente
+ */
+export type EditarConsumoInput = {
+  consumo_id: string
+  novo_valor_centavos: number
+  nova_descricao?: string | null
+  nova_data_movimento: string
+  novo_cliente_id?: string | null
+}
+
+export const editarConsumoFiado = async (input: EditarConsumoInput): Promise<any> => {
+  const { data, error } = await database.rpc('editar_consumo_fiado', {
+    p_consumo_id: input.consumo_id,
+    p_novo_valor_centavos: input.novo_valor_centavos,
+    p_nova_descricao: input.nova_descricao?.trim() || null,
+    p_nova_data_movimento: input.nova_data_movimento,
+    p_novo_cliente_id: input.novo_cliente_id || null,
+  })
+
+  if (error) throw error
+  return data
+}
+
+/**
+ * Cancela consumo fiado logicamente e recalcula cronologicamente
+ */
+export const cancelarConsumoFiado = async (consumoId: string, motivo?: string): Promise<any> => {
+  const { data, error } = await database.rpc('cancelar_consumo_fiado', {
+    p_consumo_id: consumoId,
+    p_motivo: motivo || 'Cancelamento de consumo',
+  })
+
+  if (error) throw error
+  return data
+}
+
+/**
+ * Força recálculo cronológico completo da conta do cliente
+ */
+export const recalcularClienteCronologico = async (clienteId: string): Promise<any> => {
+  const { data, error } = await database.rpc('recalcular_cliente_cronologico', {
+    p_cliente_id: clienteId,
+  })
+
+  if (error) throw error
+  return data
+}

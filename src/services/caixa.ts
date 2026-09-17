@@ -258,6 +258,80 @@ export type RegistrarRetiradaMercadoriaInput = {
   data_movimento: string // YYYY-MM-DD
 }
 
+/**
+ * Edita uma venda direta existente recalculando os efeitos no Caixa
+ */
+export type EditarVendaDiretaInput = {
+  venda_id: string
+  novo_valor_centavos: number
+  nova_forma: VendaForma
+  nova_descricao?: string | null
+  nova_data_movimento: string
+}
+
+export const editarVendaDireta = async (input: EditarVendaDiretaInput): Promise<any> => {
+  const { data, error } = await database.rpc('editar_venda_direta', {
+    p_venda_id: input.venda_id,
+    p_novo_valor_centavos: input.novo_valor_centavos,
+    p_nova_forma: input.nova_forma,
+    p_nova_descricao: input.nova_descricao?.trim() || 'Venda direta balcão',
+    p_nova_data_movimento: input.nova_data_movimento,
+  })
+
+  if (error) throw error
+  return data
+}
+
+/**
+ * Cancela venda direta logicamente
+ */
+export const cancelarVendaDireta = async (vendaId: string, motivo?: string): Promise<any> => {
+  const { data, error } = await database.rpc('cancelar_venda_direta', {
+    p_venda_id: vendaId,
+    p_motivo: motivo || 'Cancelamento de venda',
+  })
+
+  if (error) throw error
+  return data
+}
+
+/**
+ * Edita uma saída do Caixa (gaveta ou conta_pix)
+ */
+export type EditarSaidaInput = {
+  saida_id: string
+  novo_valor_centavos: number
+  nova_origem: 'gaveta' | 'conta_pix'
+  nova_descricao: string
+  nova_data_movimento: string
+}
+
+export const editarSaida = async (input: EditarSaidaInput): Promise<any> => {
+  const { data, error } = await database.rpc('editar_saida', {
+    p_saida_id: input.saida_id,
+    p_novo_valor_centavos: input.novo_valor_centavos,
+    p_nova_origem: input.nova_origem,
+    p_nova_descricao: input.nova_descricao.trim(),
+    p_nova_data_movimento: input.nova_data_movimento,
+  })
+
+  if (error) throw error
+  return data
+}
+
+/**
+ * Cancela saída do Caixa
+ */
+export const cancelarSaida = async (saidaId: string, motivo?: string): Promise<any> => {
+  const { data, error } = await database.rpc('cancelar_saida', {
+    p_saida_id: saidaId,
+    p_motivo: motivo || 'Cancelamento de saída',
+  })
+
+  if (error) throw error
+  return data
+}
+
 export const registrarRetiradaMercadoria = async (
   input: RegistrarRetiradaMercadoriaInput,
   userId: string,
@@ -323,6 +397,64 @@ export const registrarDevolucaoCredito = async (
     p_forma_devolucao: input.forma_devolucao,
     p_data_movimento: input.data_movimento,
     p_request_id: requestId,
+  })
+
+  if (error) throw error
+  return data
+}
+
+/**
+ * Edita retirada em mercadoria
+ */
+export type EditarRetiradaMercadoriaInput = {
+  retirada_id: string
+  novo_valor_centavos: number
+  novo_consumidor: string
+  nova_descricao: string
+  nova_data_movimento: string
+}
+
+export const editarRetiradaMercadoria = async (
+  input: EditarRetiradaMercadoriaInput,
+): Promise<any> => {
+  const { data, error } = await database.rpc('editar_retirada_mercadoria', {
+    p_retirada_id: input.retirada_id,
+    p_novo_valor_centavos: input.novo_valor_centavos,
+    p_novo_consumidor: input.novo_consumidor.trim(),
+    p_nova_descricao: input.nova_descricao.trim(),
+    p_nova_data_movimento: input.nova_data_movimento,
+  })
+
+  if (error) throw error
+  return data
+}
+
+/**
+ * Cancela retirada em mercadoria
+ */
+export const cancelarRetiradaMercadoria = async (
+  retiradaId: string,
+  motivo?: string,
+): Promise<any> => {
+  const { data, error } = await database.rpc('cancelar_retirada_mercadoria', {
+    p_retirada_id: retiradaId,
+    p_motivo: motivo || 'Cancelamento de retirada',
+  })
+
+  if (error) throw error
+  return data
+}
+
+/**
+ * Cancela devolução de crédito (restaura crédito do cliente e cancela saída vinculada)
+ */
+export const cancelarDevolucaoCredito = async (
+  creditoDevolucaoId: string,
+  motivo?: string,
+): Promise<any> => {
+  const { data, error } = await database.rpc('cancelar_devolucao_credito', {
+    p_credito_devolucao_id: creditoDevolucaoId,
+    p_motivo: motivo || 'Cancelamento de devolução de crédito',
   })
 
   if (error) throw error
@@ -620,6 +752,7 @@ export const getMovimentacaoDia = async (dataStr: string): Promise<MovimentacaoC
       descricao: v.descricao,
       valor_centavos: Number(v.valor_centavos),
       forma_ou_meio: formaLabel,
+      forma_raw: v.forma,
       cliente_ou_pessoa: null,
       data_movimento: v.data_movimento,
       data_registro: v.data_registro,
@@ -646,6 +779,7 @@ export const getMovimentacaoDia = async (dataStr: string): Promise<MovimentacaoC
       descricao: c.descricao || 'Consumo registrado no caderno do fiado',
       valor_centavos: Number(c.valor_centavos),
       forma_ou_meio: 'Caderno do Fiado',
+      cliente_id: c.cliente_id,
       cliente_ou_pessoa: clienteLabel,
       data_movimento: c.data_movimento,
       data_registro: c.data_registro,
@@ -687,6 +821,8 @@ export const getMovimentacaoDia = async (dataStr: string): Promise<MovimentacaoC
         : 'Pagamento recebido de fiado',
       valor_centavos: Number(p.valor_centavos),
       forma_ou_meio: formaLabel,
+      forma_raw: p.forma,
+      cliente_id: p.cliente_id,
       cliente_ou_pessoa: clienteLabel,
       data_movimento: p.data_movimento,
       data_registro: p.data_registro,
@@ -720,6 +856,8 @@ export const getMovimentacaoDia = async (dataStr: string): Promise<MovimentacaoC
       descricao: s.descricao,
       valor_centavos: Number(s.valor_centavos),
       forma_ou_meio: origemLabel,
+      origem_raw: s.origem,
+      cliente_id: (s.credito as any)?.cliente_id || null,
       cliente_ou_pessoa: clienteLabel,
       data_movimento: s.data_movimento,
       data_registro: s.data_registro,
@@ -728,6 +866,7 @@ export const getMovimentacaoDia = async (dataStr: string): Promise<MovimentacaoC
       status: s.status,
       impacta_gaveta: s.status === 'ativo' ? impactaGaveta : 'nenhum',
       origem_id: s.id,
+      vinculo_credito_id: s.vinculo_credito_id,
     })
   }
 

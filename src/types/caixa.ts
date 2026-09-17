@@ -76,6 +76,9 @@ export type MovimentacaoCaixaItem = {
   descricao?: string | null
   valor_centavos: number
   forma_ou_meio?: string | null
+  forma_raw?: string | null
+  origem_raw?: string | null
+  cliente_id?: string | null
   cliente_ou_pessoa?: string | null
   data_movimento: string // YYYY-MM-DD
   data_registro: string // ISO timestamp
@@ -84,6 +87,7 @@ export type MovimentacaoCaixaItem = {
   status: 'ativo' | 'cancelado'
   impacta_gaveta?: 'positivo' | 'negativo' | 'nenhum'
   origem_id?: string
+  vinculo_credito_id?: string | null
 }
 
 export type ResumoCaixaDia = {

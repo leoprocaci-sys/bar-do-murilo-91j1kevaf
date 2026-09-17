@@ -44,12 +44,16 @@ import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { useToast } from '@/hooks/use-toast'
 import {
   getCliente,
+  listClientes,
   getSituacaoFinanceiraCliente,
   getHistoricoCliente,
   getAuditoriaCliente,
   toggleFavoritoCliente,
   editarPagamentoFiado,
   cancelarPagamentoFiado,
+  editarConsumoFiado,
+  cancelarConsumoFiado,
+  recalcularClienteCronologico,
 } from '@/services/fiado'
 import {
   formatCentavos,
@@ -71,10 +75,17 @@ export const FiadoFichaCliente = () => {
   const [editValorInput, setEditValorInput] = useState('')
   const [editForma, setEditForma] = useState<FormaPagamento>('dinheiro')
   const [editDataMovimento, setEditDataMovimento] = useState('')
-
   const [pagamentoParaCancelar, setPagamentoParaCancelar] = useState<MovimentacaoHistorico | null>(
     null,
   )
+
+  // Estados para modais de Edição e Cancelamento de Consumo (com Troca de Cliente)
+  const [consumoParaEditar, setConsumoParaEditar] = useState<MovimentacaoHistorico | null>(null)
+  const [editConsumoValorInput, setEditConsumoValorInput] = useState('')
+  const [editConsumoDescricao, setEditConsumoDescricao] = useState('')
+  const [editConsumoData, setEditConsumoData] = useState('')
+  const [editConsumoClienteDestinoId, setEditConsumoClienteDestinoId] = useState<string>('')
+  const [consumoParaCancelar, setConsumoParaCancelar] = useState<MovimentacaoHistorico | null>(null)
 
   // 1. Dados cadastrais do cliente
   const {
@@ -118,6 +129,13 @@ export const FiadoFichaCliente = () => {
     queryKey: ['fiado-auditoria', id],
     queryFn: () => (id ? getAuditoriaCliente(id) : []),
     enabled: Boolean(id) && tabAtiva === 'auditoria',
+  })
+
+  // Lista de outros clientes para a funcionalidade de Troca de Cliente em Consumo
+  const { data: todosClientes = [] } = useQuery({
+    queryKey: ['todos-clientes-troca'],
+    queryFn: () => listClientes(),
+    enabled: Boolean(consumoParaEditar),
   })
 
   // Mutation de favorito
@@ -186,11 +204,84 @@ export const FiadoFichaCliente = () => {
     },
   })
 
+  // Mutations para Edição e Cancelamento de Consumo
+  const editarConsumoMutation = useMutation({
+    mutationFn: async () => {
+      if (!consumoParaEditar) return
+      const novoCentavos = parseBRLToCentavos(editConsumoValorInput)
+      if (novoCentavos <= 0) {
+        throw new Error('O valor do consumo deve ser maior que zero.')
+      }
+
+      return await editarConsumoFiado({
+        consumo_id: consumoParaEditar.id,
+        novo_valor_centavos: novoCentavos,
+        nova_descricao: editConsumoDescricao,
+        nova_data_movimento: editConsumoData,
+        novo_cliente_id: editConsumoClienteDestinoId || undefined,
+      })
+    },
+    onSuccess: (res) => {
+      setConsumoParaEditar(null)
+      recarregarTudo()
+      if (res?.troca_cliente) {
+        toast({
+          title: 'Consumo transferido com sucesso!',
+          description:
+            'A dívida e os efeitos foram retirados desta conta e aplicados ao novo cliente com recálculo cronológico.',
+        })
+      } else {
+        toast({
+          title: 'Consumo atualizado!',
+          description: 'Valor, descrição e recálculo cronológico concluídos com sucesso.',
+        })
+      }
+    },
+    onError: (err: any) => {
+      toast({
+        title: 'Erro ao editar consumo',
+        description: err.message || 'Não foi possível salvar as alterações do consumo.',
+        variant: 'destructive',
+      })
+    },
+  })
+
+  const cancelarConsumoMutation = useMutation({
+    mutationFn: async () => {
+      if (!consumoParaCancelar) return
+      return await cancelarConsumoFiado(consumoParaCancelar.id)
+    },
+    onSuccess: () => {
+      setConsumoParaCancelar(null)
+      recarregarTudo()
+      toast({
+        title: 'Consumo cancelado!',
+        description:
+          'Efeitos do consumo cancelados e saldo do cliente recalculado cronologicamente.',
+      })
+    },
+    onError: (err: any) => {
+      toast({
+        title: 'Erro ao cancelar consumo',
+        description: err.message || 'Não foi possível cancelar o consumo.',
+        variant: 'destructive',
+      })
+    },
+  })
+
   const abrirEdicaoPagamento = (pag: MovimentacaoHistorico) => {
     setPagamentoParaEditar(pag)
     setEditValorInput((pag.valor_centavos / 100).toFixed(2).replace('.', ','))
     setEditForma((pag.forma as FormaPagamento) || 'dinheiro')
     setEditDataMovimento(pag.data_movimento)
+  }
+
+  const abrirEdicaoConsumo = (cons: MovimentacaoHistorico) => {
+    setConsumoParaEditar(cons)
+    setEditConsumoValorInput((cons.valor_centavos / 100).toFixed(2).replace('.', ','))
+    setEditConsumoDescricao(cons.descricao || '')
+    setEditConsumoData(cons.data_movimento)
+    setEditConsumoClienteDestinoId(id || '')
   }
 
   const recarregarTudo = () => {
@@ -576,6 +667,34 @@ export const FiadoFichaCliente = () => {
                             </Button>
                           </div>
                         )}
+
+                        {/* Ações para consumos ativos: Editar (inclui troca de cliente) e Cancelar */}
+                        {item.tipo === 'consumo' && item.status === 'ativo' && (
+                          <div className="mt-1.5 flex items-center justify-end gap-1">
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => abrirEdicaoConsumo(item)}
+                              className="h-7 px-2 text-[11px] font-semibold text-[#A8B3A6] hover:bg-[#1C271E] hover:text-[#F3EAD3]"
+                              title="Corrigir valor, data, descrição ou cliente"
+                            >
+                              <Pencil className="mr-1 h-3 w-3" />
+                              Editar
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => setConsumoParaCancelar(item)}
+                              className="h-7 px-2 text-[11px] font-semibold text-red-400 hover:bg-red-950/40 hover:text-red-300"
+                              title="Cancelar consumo"
+                            >
+                              <Ban className="mr-1 h-3 w-3" />
+                              Cancelar
+                            </Button>
+                          </div>
+                        )}
                       </div>
                     </div>
 
@@ -920,6 +1039,248 @@ export const FiadoFichaCliente = () => {
                 <Loader2 className="h-4 w-4 animate-spin" />
               ) : (
                 'SIM, CANCELAR PAGAMENTO'
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* MODAL 3: EDIÇÃO DE CONSUMO (com Troca de Cliente e Alerta de Impacto) */}
+      <Dialog
+        open={Boolean(consumoParaEditar)}
+        onOpenChange={(aberto) => !aberto && setConsumoParaEditar(null)}
+      >
+        <DialogContent className="border-[#26332A] bg-[#141B15] text-[#F3EAD3] sm:max-w-md max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="text-lg font-bold text-[#F3EAD3]">
+              Editar Consumo do Fiado
+            </DialogTitle>
+            <DialogDescription className="text-xs text-[#A8B3A6]">
+              Permite corrigir o valor lançado, descrição, data ou corrigir lançamento na conta
+              errada transferindo para outro cliente.
+            </DialogDescription>
+          </DialogHeader>
+
+          {consumoParaEditar && (
+            <form
+              onSubmit={(e) => {
+                e.preventDefault()
+                editarConsumoMutation.mutate()
+              }}
+              className="space-y-3.5 text-xs"
+            >
+              <div className="rounded-xl border border-[#26332A] bg-[#0B0F0C] p-3 space-y-1">
+                <div className="flex justify-between">
+                  <span className="text-[#A8B3A6]">Valor registrado anteriormente:</span>
+                  <strong className="text-white">
+                    {formatCentavos(consumoParaEditar.valor_centavos)}
+                  </strong>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-[#A8B3A6]">Cliente atual:</span>
+                  <span className="font-semibold text-white">{cliente.nome}</span>
+                </div>
+              </div>
+
+              {/* Novo Valor */}
+              <div className="space-y-1">
+                <Label htmlFor="editConsumoValor" className="text-xs font-bold text-[#F3EAD3]">
+                  Novo Valor do Consumo (R$) *
+                </Label>
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm font-bold text-[#1E6B3A]">
+                    R$
+                  </span>
+                  <Input
+                    id="editConsumoValor"
+                    type="text"
+                    inputMode="decimal"
+                    required
+                    value={editConsumoValorInput}
+                    onChange={(e) => setEditConsumoValorInput(e.target.value)}
+                    className="h-11 rounded-xl border-[#26332A] bg-[#0B0F0C] pl-10 text-base font-bold text-[#F3EAD3]"
+                  />
+                </div>
+              </div>
+
+              {/* Descrição */}
+              <div className="space-y-1">
+                <Label htmlFor="editConsumoDesc" className="text-xs font-bold text-[#F3EAD3]">
+                  Descrição / Itens
+                </Label>
+                <Input
+                  id="editConsumoDesc"
+                  type="text"
+                  placeholder="Ex: 2 cervejas, 1 porção..."
+                  value={editConsumoDescricao}
+                  onChange={(e) => setEditConsumoDescricao(e.target.value)}
+                  className="h-10 rounded-xl border-[#26332A] bg-[#0B0F0C] text-sm text-[#F3EAD3]"
+                />
+              </div>
+
+              {/* Data do Movimento */}
+              <div className="space-y-1">
+                <Label htmlFor="editConsumoData" className="text-xs font-bold text-[#F3EAD3]">
+                  Data do Consumo *
+                </Label>
+                <Input
+                  id="editConsumoData"
+                  type="date"
+                  required
+                  value={editConsumoData}
+                  onChange={(e) => setEditConsumoData(e.target.value)}
+                  className="h-10 rounded-xl border-[#26332A] bg-[#0B0F0C] text-sm text-[#F3EAD3]"
+                />
+              </div>
+
+              {/* Troca de Cliente (Conta Errada) */}
+              <div className="space-y-1 pt-2 border-t border-[#26332A]">
+                <Label
+                  htmlFor="editConsumoCliente"
+                  className="text-xs font-bold text-[#F3EAD3] flex items-center justify-between"
+                >
+                  <span>Atribuir a outro Cliente (Troca de Conta)</span>
+                  {editConsumoClienteDestinoId && editConsumoClienteDestinoId !== id && (
+                    <Badge className="bg-amber-950 text-amber-300 border-amber-800 text-[10px]">
+                      Transferência de conta
+                    </Badge>
+                  )}
+                </Label>
+                <select
+                  id="editConsumoCliente"
+                  value={editConsumoClienteDestinoId}
+                  onChange={(e) => setEditConsumoClienteDestinoId(e.target.value)}
+                  className="w-full h-10 rounded-xl border border-[#26332A] bg-[#0B0F0C] px-3 text-xs text-[#F3EAD3] focus:outline-none focus:ring-1 focus:ring-[#1E6B3A]"
+                >
+                  <option value={id}>{cliente.nome} (Manter neste cliente)</option>
+                  {todosClientes
+                    .filter((c) => c.id !== id)
+                    .map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.nome} {c.apelido ? `(${c.apelido})` : ''}
+                      </option>
+                    ))}
+                </select>
+
+                {editConsumoClienteDestinoId && editConsumoClienteDestinoId !== id && (
+                  <div className="mt-2 rounded-xl border border-amber-800/80 bg-amber-950/30 p-2.5 text-[11px] text-amber-200">
+                    <p className="font-bold flex items-center gap-1 text-amber-300">
+                      <AlertTriangle className="h-4 w-4 shrink-0" />
+                      Atenção: Ação de Alto Impacto
+                    </p>
+                    <p className="mt-1 text-amber-200/90 leading-relaxed">
+                      Este consumo será removido da conta de <strong>{cliente.nome}</strong> e
+                      transferido para o novo cliente. Ambas as contas terão seus saldos, créditos e
+                      históricos recalculados cronologicamente. Pagamentos reais realizados serão
+                      preservados.
+                    </p>
+                  </div>
+                )}
+              </div>
+
+              {/* Alerta se o valor estiver aumentando */}
+              {parseBRLToCentavos(editConsumoValorInput) > consumoParaEditar.valor_centavos && (
+                <div className="rounded-xl border border-yellow-800/80 bg-yellow-950/30 p-2 text-[11px] text-yellow-200">
+                  <span className="font-bold text-yellow-300">Aumento de valor: </span>
+                  O saldo devedor aumentará em{' '}
+                  <strong>
+                    {formatCentavos(
+                      parseBRLToCentavos(editConsumoValorInput) - consumoParaEditar.valor_centavos,
+                    )}
+                  </strong>
+                  .
+                </div>
+              )}
+
+              <DialogFooter className="flex flex-col-reverse sm:flex-row gap-2 pt-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setConsumoParaEditar(null)}
+                  className="rounded-xl border-[#26332A] bg-[#0B0F0C] text-[#F3EAD3]"
+                >
+                  CANCELAR
+                </Button>
+                <Button
+                  type="submit"
+                  disabled={editarConsumoMutation.isPending}
+                  className="rounded-xl bg-[#1E6B3A] font-bold text-[#F3EAD3] hover:bg-[#25814A]"
+                >
+                  {editarConsumoMutation.isPending ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    'CONFIRMAR ALTERAÇÃO'
+                  )}
+                </Button>
+              </DialogFooter>
+            </form>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* MODAL 4: CANCELAMENTO DE CONSUMO */}
+      <Dialog
+        open={Boolean(consumoParaCancelar)}
+        onOpenChange={(aberto) => !aberto && setConsumoParaCancelar(null)}
+      >
+        <DialogContent className="border-[#26332A] bg-[#141B15] text-[#F3EAD3] sm:max-w-md">
+          <DialogHeader>
+            <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-red-950/60 text-red-400 border border-red-800">
+              <Ban className="h-6 w-6" />
+            </div>
+            <DialogTitle className="text-center text-lg font-bold text-[#F3EAD3] mt-2">
+              Cancelar Consumo Fiado?
+            </DialogTitle>
+            <DialogDescription className="text-center text-xs text-[#A8B3A6]">
+              A dívida deste consumo será removida da conta do cliente e o saldo será recalculado
+              cronologicamente. O registro histórico permanece arquivado para auditoria.
+            </DialogDescription>
+          </DialogHeader>
+
+          {consumoParaCancelar && (
+            <div className="space-y-2 rounded-xl border border-[#26332A] bg-[#0B0F0C] p-3 text-xs">
+              <div className="flex justify-between py-1 border-b border-[#1C271E]">
+                <span className="text-[#A8B3A6]">Cliente:</span>
+                <strong className="text-[#F3EAD3]">{cliente.nome}</strong>
+              </div>
+              <div className="flex justify-between py-1 border-b border-[#1C271E]">
+                <span className="text-[#A8B3A6]">Valor do consumo:</span>
+                <strong className="text-red-300">
+                  {formatCentavos(consumoParaCancelar.valor_centavos)}
+                </strong>
+              </div>
+              {consumoParaCancelar.descricao && (
+                <div className="flex justify-between py-1 border-b border-[#1C271E]">
+                  <span className="text-[#A8B3A6]">Descrição:</span>
+                  <span>{consumoParaCancelar.descricao}</span>
+                </div>
+              )}
+              <div className="flex justify-between py-1">
+                <span className="text-[#A8B3A6]">Data do consumo:</span>
+                <span>{formatDateBR(consumoParaCancelar.data_movimento)}</span>
+              </div>
+            </div>
+          )}
+
+          <DialogFooter className="flex flex-col-reverse sm:flex-row gap-2 mt-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setConsumoParaCancelar(null)}
+              className="rounded-xl border-[#26332A] bg-[#0B0F0C] text-[#F3EAD3]"
+            >
+              NÃO, MANTER CONSUMO
+            </Button>
+            <Button
+              type="button"
+              onClick={() => cancelarConsumoMutation.mutate()}
+              disabled={cancelarConsumoMutation.isPending}
+              className="rounded-xl bg-red-700 font-bold text-white hover:bg-red-600"
+            >
+              {cancelarConsumoMutation.isPending ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                'SIM, CANCELAR CONSUMO'
               )}
             </Button>
           </DialogFooter>
