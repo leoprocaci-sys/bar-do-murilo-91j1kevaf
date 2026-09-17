@@ -33,10 +33,13 @@ const Usuarios = () => {
 
   const activeCount = useMemo(() => users.filter((user) => user.ativo).length, [users])
 
+  const [mostrarTecnicos, setMostrarTecnicos] = useState(false)
+
   const load = async () => {
     setLoading(true)
     try {
-      setUsers(await listAppUsers())
+      // B02: listAppUsers(mostrarTecnicos) oculta contas técnicas da listagem operacional padrão
+      setUsers(await listAppUsers(mostrarTecnicos))
     } catch {
       toast({
         title: 'Não foi possível carregar os usuários',
@@ -50,7 +53,7 @@ const Usuarios = () => {
 
   useEffect(() => {
     void load()
-  }, [])
+  }, [mostrarTecnicos])
 
   const changeStatus = async () => {
     if (!statusTarget) return
@@ -125,6 +128,18 @@ const Usuarios = () => {
           <Plus className="mr-2 h-5 w-5" />
           CADASTRAR USUÁRIO
         </Button>
+
+        {/* B02: Alternador discreto para contas técnicas / de teste */}
+        <div className="mt-3 flex items-center justify-between text-xs text-[#879689]">
+          <span>Exibindo administradores operacionais do bar</span>
+          <button
+            type="button"
+            onClick={() => setMostrarTecnicos(!mostrarTecnicos)}
+            className="text-[11px] text-[#A8B3A6] hover:text-[#F3EAD3] underline"
+          >
+            {mostrarTecnicos ? 'Ocultar contas técnicas' : 'Mostrar contas técnicas'}
+          </button>
+        </div>
       </header>
 
       {loading && users.length === 0 ? (

@@ -33,16 +33,36 @@ export const getAppUser = async (userId: string): Promise<AppUser | null> => {
   return data as AppUser | null
 }
 
-export const listAppUsers = async (): Promise<AppUser[]> => {
+export const listAppUsers = async (incluirTecnicos = false): Promise<AppUser[]> => {
   const { data, error } = await database
     .from('app_users')
     .select('id, username, nome, ativo, deve_alterar_senha, perfil, criado_em, atualizado_em')
     .order('nome', { ascending: true })
 
   if (error) throw error
-  return (data ?? []) as AppUser[]
-}
+  const usuarios = (data || []) as AppUser[]
 
+  if (incluirTecnicos) {
+    return usuarios
+  }
+
+  // B02: Contas técnicas/de teste (ex.: teste-*, bot-*, automacao-*, qa-*)
+  // Não são exibidas em listas operacionais do dia a dia (seleção de operador, consumo por pessoa, etc.)
+  // Usuários reais cadastrados dinamicamente continuam aparecendo normalmente.
+  return usuarios.filter((u) => {
+    const un = (u.username || '').toLowerCase()
+    const nome = (u.nome || '').toLowerCase()
+    const isTecnico =
+      un.startsWith('teste-') ||
+      un.startsWith('test-') ||
+      un.startsWith('bot-') ||
+      un.startsWith('qa-') ||
+      un === 'teste' ||
+      nome.startsWith('[técnico]') ||
+      nome.startsWith('[teste]')
+    return !isTecnico
+  })
+}
 export const completeFirstAccess = async () => {
   const { error } = await database.rpc('complete_first_access')
   if (error) throw error

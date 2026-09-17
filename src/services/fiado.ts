@@ -4,10 +4,14 @@ import type {
   Cliente,
   Consumo,
   Credito,
+  DetalhamentoClientePeriodo,
+  EvolucaoClienteFiado,
   FormaPagamento,
   HistoricoAuditoria,
   MovimentacaoHistorico,
   Pagamento,
+  PeriodoRelatorioFiado,
+  RelatorioFiadoPeriodo,
   SituacaoFinanceiraCliente,
 } from '@/types/fiado'
 
@@ -408,6 +412,36 @@ export const getAuditoriaCliente = async (clienteId: string): Promise<HistoricoA
 }
 
 /**
+ * Consulta o histórico de alterações (before/after) de um registro específico (venda, saída, retirada, consumo, pagamento)
+ * Exclusivamente para leitura/consulta informativa.
+ */
+export const getHistoricoRegistro = async (
+  registroId: string,
+  tabela?: string,
+): Promise<HistoricoAuditoria[]> => {
+  let query = database
+    .from('historico_alteracoes')
+    .select(`
+      id, tabela, registro_id, dados_anteriores, dados_novos, alterado_por, alterado_em,
+      alterado_por_user:app_users!historico_alteracoes_alterado_por_fkey (nome)
+    `)
+    .eq('registro_id', registroId)
+    .order('alterado_em', { ascending: false })
+
+  if (tabela) {
+    query = query.eq('tabela', tabela)
+  }
+
+  const { data, error } = await query
+  if (error) throw error
+
+  return (data ?? []).map((row: any) => ({
+    ...row,
+    alterado_por_nome: row.alterado_por_user?.nome || 'Administrador',
+  })) as HistoricoAuditoria[]
+}
+
+/**
  * Registrar novo consumo fiado
  */
 export type RegistrarConsumoInput = {
@@ -691,4 +725,379 @@ export const recalcularClienteCronologico = async (clienteId: string): Promise<a
 
   if (error) throw error
   return data
+}
+
+/**
+ * 14. RELATÓRIOS DO FIADO (MENSAL E ANUAL)
+ * Calcula a evolução cronológica real dos saldos de cada cliente no período:
+ * dívida inicial, crédito inicial, consumos do período, pagamentos do período,
+ * crédito gerado, crédito utilizado, crédito devolvido, dívida final e crédito final.
+ * Temporalidade estrita: mostra a posição correspondente ao FINAL do período selecionado.
+ */
+export const getRelatorioFiado = async (
+  tipo: PeriodoRelatorioFiado,
+  ano: number,
+  mes?: number, // 1-12
+): Promise<RelatorioFiadoPeriodo> => {
+  let dataInicio: string
+  let dataFim: string
+  let tituloPeriodo: string
+
+  const mesesNomes = [
+    'Janeiro',
+    'Fevereiro',
+    'Março',
+    'Abril',
+    'Maio',
+    'Junho',
+    'Julho',
+    'Agosto',
+    'Setembro',
+    'Outubro',
+    'Novembro',
+    'Dezembro',
+  ]
+
+  if (tipo === 'mes') {
+    const m = mes || new Date().getMonth() + 1
+    const ultimoDia = new Date(ano, m, 0).getDate()
+    dataInicio = `${ano}-${String(m).padStart(2, '0')}-01`
+    dataFim = `${ano}-${String(m).padStart(2, '0')}-${String(ultimoDia).padStart(2, '0')}`
+    tituloPeriodo = `${mesesNomes[m - 1]} de ${ano}`
+  } else {
+    dataInicio = `${ano}-01-01`
+    dataFim = `${ano}-12-31`
+    tituloPeriodo = `Ano de ${ano}`
+  }
+
+  // 1. Busca todos os clientes cadastrados
+  const { data: clientesData, error: errClientes } = await database
+    .from('clientes')
+    .select('id, nome, apelido, telefone, criado_em')
+    .order('nome', { ascending: true })
+
+  if (errClientes) throw errClientes
+
+  // 2. Busca todos os consumos, pagamentos e créditos ativos até dataFim
+  const [consumosRes, pagamentosRes, creditosRes] = await Promise.all([
+    database
+      .from('consumos')
+      .select('id, cliente_id, valor_centavos, data_movimento, data_registro, seq')
+      .eq('status', 'ativo')
+      .lte('data_movimento', dataFim)
+      .order('data_movimento', { ascending: true })
+      .order('seq', { ascending: true })
+      .order('data_registro', { ascending: true }),
+
+    database
+      .from('pagamentos')
+      .select(
+        'id, cliente_id, valor_centavos, forma, credito_id, data_movimento, data_registro, seq',
+      )
+      .eq('status', 'ativo')
+      .lte('data_movimento', dataFim)
+      .order('data_movimento', { ascending: true })
+      .order('seq', { ascending: true })
+      .order('data_registro', { ascending: true }),
+
+    database
+      .from('creditos')
+      .select(
+        'id, cliente_id, tipo, valor_centavos, origem_pagamento_id, movimento_vinculado_id, data_movimento, data_registro, seq',
+      )
+      .eq('status', 'ativo')
+      .lte('data_movimento', dataFim)
+      .order('data_movimento', { ascending: true })
+      .order('seq', { ascending: true })
+      .order('data_registro', { ascending: true }),
+  ])
+
+  if (consumosRes.error) throw consumosRes.error
+  if (pagamentosRes.error) throw pagamentosRes.error
+  if (creditosRes.error) throw creditosRes.error
+
+  const todosConsumos = consumosRes.data || []
+  const todosPagamentos = pagamentosRes.data || []
+  const todosCreditos = creditosRes.data || []
+
+  // Agrupa eventos por cliente
+  type EventoSimulacao = {
+    tipo: 'consumo' | 'pagamento' | 'devolucao'
+    id: string
+    valor_centavos: number
+    data_movimento: string
+    data_registro: string
+    seq: number
+  }
+
+  const eventosPorCliente = new Map<string, EventoSimulacao[]>()
+
+  for (const c of todosConsumos) {
+    if (!eventosPorCliente.has(c.cliente_id)) eventosPorCliente.set(c.cliente_id, [])
+    eventosPorCliente.get(c.cliente_id)!.push({
+      tipo: 'consumo',
+      id: c.id,
+      valor_centavos: Number(c.valor_centavos),
+      data_movimento: c.data_movimento,
+      data_registro: c.data_registro,
+      seq: c.seq,
+    })
+  }
+
+  for (const p of todosPagamentos) {
+    if (!eventosPorCliente.has(p.cliente_id)) eventosPorCliente.set(p.cliente_id, [])
+    eventosPorCliente.get(p.cliente_id)!.push({
+      tipo: 'pagamento',
+      id: p.id,
+      valor_centavos: Number(p.valor_centavos),
+      data_movimento: p.data_movimento,
+      data_registro: p.data_registro,
+      seq: p.seq,
+    })
+  }
+
+  for (const cr of todosCreditos) {
+    if (cr.tipo === 'devolucao') {
+      if (!eventosPorCliente.has(cr.cliente_id)) eventosPorCliente.set(cr.cliente_id, [])
+      eventosPorCliente.get(cr.cliente_id)!.push({
+        tipo: 'devolucao',
+        id: cr.id,
+        valor_centavos: Number(cr.valor_centavos),
+        data_movimento: cr.data_movimento,
+        data_registro: cr.data_registro,
+        seq: cr.seq,
+      })
+    }
+  }
+
+  const clientesEvolucao: EvolucaoClienteFiado[] = []
+
+  let totalBarDividaInicial = 0
+  let totalBarConsumos = 0
+  let totalBarPagamentos = 0
+  let totalBarDividaFinal = 0
+  let totalBarCreditoInicial = 0
+  let totalBarCreditoGerado = 0
+  let totalBarCreditoUtilizado = 0
+  let totalBarCreditoDevolvido = 0
+  let totalBarCreditoFinal = 0
+
+  for (const c of clientesData || []) {
+    const rawEventos = eventosPorCliente.get(c.id) || []
+    // Ordena cronologicamente
+    const eventos = rawEventos.slice().sort((a, b) => {
+      if (a.data_movimento !== b.data_movimento) {
+        return a.data_movimento.localeCompare(b.data_movimento)
+      }
+      if (a.seq !== b.seq) {
+        return a.seq - b.seq
+      }
+      return a.data_registro.localeCompare(b.data_registro)
+    })
+
+    // Simula a evolução cronológica
+    let dividaAcum = 0
+    let creditoAcum = 0
+
+    let dividaInicioPeriodo = 0
+    let creditoInicioPeriodo = 0
+
+    let consumosPeriodo = 0
+    let pagamentosRecebidosPeriodo = 0
+    let pagamentosAmortizadosPeriodo = 0
+    let creditoGeradoPeriodo = 0
+    let creditoUtilizadoPeriodo = 0
+    let creditoDevolvidoPeriodo = 0
+
+    let processouInicio = false
+
+    for (const ev of eventos) {
+      const antesDoPeriodo = ev.data_movimento < dataInicio
+      const noPeriodo = ev.data_movimento >= dataInicio && ev.data_movimento <= dataFim
+
+      if (noPeriodo && !processouInicio) {
+        dividaInicioPeriodo = dividaAcum
+        creditoInicioPeriodo = creditoAcum
+        processouInicio = true
+      }
+
+      if (ev.tipo === 'consumo') {
+        const credUsar = creditoAcum > 0 ? Math.min(creditoAcum, ev.valor_centavos) : 0
+        creditoAcum -= credUsar
+        const novaDivida = ev.valor_centavos - credUsar
+        dividaAcum += novaDivida
+
+        if (noPeriodo) {
+          consumosPeriodo += ev.valor_centavos
+          creditoUtilizadoPeriodo += credUsar
+        }
+      } else if (ev.tipo === 'pagamento') {
+        let amortizacao = 0
+        let excedente = 0
+
+        if (ev.valor_centavos > dividaAcum) {
+          amortizacao = dividaAcum
+          excedente = ev.valor_centavos - dividaAcum
+          dividaAcum = 0
+        } else {
+          amortizacao = ev.valor_centavos
+          excedente = 0
+          dividaAcum -= amortizacao
+        }
+        creditoAcum += excedente
+
+        if (noPeriodo) {
+          pagamentosRecebidosPeriodo += ev.valor_centavos
+          pagamentosAmortizadosPeriodo += amortizacao
+          creditoGeradoPeriodo += excedente
+        }
+      } else if (ev.tipo === 'devolucao') {
+        if (ev.valor_centavos > creditoAcum) {
+          creditoAcum = 0
+        } else {
+          creditoAcum -= ev.valor_centavos
+        }
+
+        if (noPeriodo) {
+          creditoDevolvidoPeriodo += ev.valor_centavos
+        }
+      }
+    }
+
+    if (!processouInicio) {
+      // Se todos os eventos foram antes do período, a dívida inicial é a final acumulada até então
+      dividaInicioPeriodo = dividaAcum
+      creditoInicioPeriodo = creditoAcum
+    }
+
+    const dividaFinal = dividaAcum
+    const creditoFinal = creditoAcum
+
+    // Filtra clientes que tiveram movimentação OU saldo no início/final do período
+    const teveAtividadeOuSaldo =
+      dividaInicioPeriodo > 0 ||
+      creditoInicioPeriodo > 0 ||
+      consumosPeriodo > 0 ||
+      pagamentosRecebidosPeriodo > 0 ||
+      creditoDevolvidoPeriodo > 0 ||
+      dividaFinal > 0 ||
+      creditoFinal > 0
+
+    if (teveAtividadeOuSaldo) {
+      clientesEvolucao.push({
+        cliente_id: c.id,
+        nome: c.nome,
+        apelido: c.apelido,
+        telefone: c.telefone,
+        dividaInicialCentavos: dividaInicioPeriodo,
+        consumosPeriodoCentavos: consumosPeriodo,
+        pagamentosAmortizadosPeriodoCentavos: pagamentosAmortizadosPeriodo,
+        creditoUtilizadoPeriodoCentavos: creditoUtilizadoPeriodo,
+        dividaFinalCentavos: dividaFinal,
+        pagamentosRecebidosPeriodoCentavos: pagamentosRecebidosPeriodo,
+        creditoInicialCentavos: creditoInicioPeriodo,
+        creditoGeradoPeriodoCentavos: creditoGeradoPeriodo,
+        creditoDevolvidoPeriodoCentavos: creditoDevolvidoPeriodo,
+        creditoFinalCentavos: creditoFinal,
+      })
+
+      totalBarDividaInicial += dividaInicioPeriodo
+      totalBarConsumos += consumosPeriodo
+      totalBarPagamentos += pagamentosRecebidosPeriodo
+      totalBarDividaFinal += dividaFinal
+      totalBarCreditoInicial += creditoInicioPeriodo
+      totalBarCreditoGerado += creditoGeradoPeriodo
+      totalBarCreditoUtilizado += creditoUtilizadoPeriodo
+      totalBarCreditoDevolvido += creditoDevolvidoPeriodo
+      totalBarCreditoFinal += creditoFinal
+    }
+  }
+
+  // Ordena clientes por dívida final decrescente, depois por nome
+  clientesEvolucao.sort((a, b) => {
+    if (b.dividaFinalCentavos !== a.dividaFinalCentavos) {
+      return b.dividaFinalCentavos - a.dividaFinalCentavos
+    }
+    return a.nome.localeCompare(b.nome)
+  })
+
+  return {
+    tipo,
+    ano,
+    mes,
+    dataInicio,
+    dataFim,
+    tituloPeriodo,
+    clientes: clientesEvolucao,
+    totais: {
+      totalClientes: clientesEvolucao.length,
+      dividaInicialCentavos: totalBarDividaInicial,
+      consumosPeriodoCentavos: totalBarConsumos,
+      pagamentosRecebidosPeriodoCentavos: totalBarPagamentos,
+      dividaFinalCentavos: totalBarDividaFinal,
+      creditoInicialCentavos: totalBarCreditoInicial,
+      creditoGeradoPeriodoCentavos: totalBarCreditoGerado,
+      creditoUtilizadoPeriodoCentavos: totalBarCreditoUtilizado,
+      creditoDevolvidoPeriodoCentavos: totalBarCreditoDevolvido,
+      creditoFinalCentavos: totalBarCreditoFinal,
+    },
+  }
+}
+
+/**
+ * 15. DETALHAMENTO DE CLIENTE NO PERÍODO DO FIADO
+ */
+export const getDetalhamentoClientePeriodo = async (
+  clienteId: string,
+  dataInicio: string,
+  dataFim: string,
+): Promise<DetalhamentoClientePeriodo> => {
+  const [clienteRes, consumosRes, pagamentosRes, creditosRes] = await Promise.all([
+    database.from('clientes').select('*').eq('id', clienteId).single(),
+    database
+      .from('consumos')
+      .select('id, data_movimento, descricao, valor_centavos, status')
+      .eq('cliente_id', clienteId)
+      .gte('data_movimento', dataInicio)
+      .lte('data_movimento', dataFim)
+      .order('data_movimento', { ascending: false })
+      .order('seq', { ascending: false }),
+    database
+      .from('pagamentos')
+      .select('id, data_movimento, forma, valor_centavos, status')
+      .eq('cliente_id', clienteId)
+      .gte('data_movimento', dataInicio)
+      .lte('data_movimento', dataFim)
+      .order('data_movimento', { ascending: false })
+      .order('seq', { ascending: false }),
+    database
+      .from('creditos')
+      .select('id, tipo, data_movimento, valor_centavos, status')
+      .eq('cliente_id', clienteId)
+      .gte('data_movimento', dataInicio)
+      .lte('data_movimento', dataFim)
+      .order('data_movimento', { ascending: false })
+      .order('seq', { ascending: false }),
+  ])
+
+  if (clienteRes.error) throw clienteRes.error
+  if (consumosRes.error) throw consumosRes.error
+  if (pagamentosRes.error) throw pagamentosRes.error
+  if (creditosRes.error) throw creditosRes.error
+
+  return {
+    cliente: clienteRes.data as Cliente,
+    consumos: (consumosRes.data || []).map((c: any) => ({
+      ...c,
+      valor_centavos: Number(c.valor_centavos),
+    })),
+    pagamentos: (pagamentosRes.data || []).map((p: any) => ({
+      ...p,
+      valor_centavos: Number(p.valor_centavos),
+    })),
+    operacoesCredito: (creditosRes.data || []).map((cr: any) => ({
+      ...cr,
+      valor_centavos: Number(cr.valor_centavos),
+    })),
+  }
 }

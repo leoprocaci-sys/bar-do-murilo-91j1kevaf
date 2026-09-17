@@ -106,3 +106,72 @@ export type HistoricoAuditoria = {
   alterado_por_nome?: string
   alterado_em: string
 }
+
+export type PeriodoRelatorioFiado = 'mes' | 'ano'
+
+export type EvolucaoClienteFiado = {
+  cliente_id: string
+  nome: string
+  apelido: string | null
+  telefone: string | null
+  // Dívidas
+  dividaInicialCentavos: number
+  consumosPeriodoCentavos: number
+  pagamentosAmortizadosPeriodoCentavos: number
+  creditoUtilizadoPeriodoCentavos: number
+  dividaFinalCentavos: number
+  // Pagamentos totais recebidos no período
+  pagamentosRecebidosPeriodoCentavos: number
+  // Créditos
+  creditoInicialCentavos: number
+  creditoGeradoPeriodoCentavos: number
+  creditoDevolvidoPeriodoCentavos: number
+  creditoFinalCentavos: number
+}
+
+export type DetalhamentoClientePeriodo = {
+  cliente: Cliente
+  consumos: Array<{
+    id: string
+    data_movimento: string
+    descricao: string | null
+    valor_centavos: number
+    status: string
+  }>
+  pagamentos: Array<{
+    id: string
+    data_movimento: string
+    forma: FormaPagamento
+    valor_centavos: number
+    status: string
+  }>
+  operacoesCredito: Array<{
+    id: string
+    tipo: 'origem' | 'utilizacao' | 'devolucao'
+    data_movimento: string
+    valor_centavos: number
+    status: string
+  }>
+}
+
+export type RelatorioFiadoPeriodo = {
+  tipo: PeriodoRelatorioFiado
+  ano: number
+  mes?: number // 1 a 12 para mensal
+  dataInicio: string
+  dataFim: string
+  tituloPeriodo: string
+  clientes: EvolucaoClienteFiado[]
+  totais: {
+    totalClientes: number
+    dividaInicialCentavos: number
+    consumosPeriodoCentavos: number
+    pagamentosRecebidosPeriodoCentavos: number
+    dividaFinalCentavos: number
+    creditoInicialCentavos: number
+    creditoGeradoPeriodoCentavos: number
+    creditoUtilizadoPeriodoCentavos: number
+    creditoDevolvidoPeriodoCentavos: number
+    creditoFinalCentavos: number
+  }
+}

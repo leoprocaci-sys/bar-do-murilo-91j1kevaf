@@ -578,8 +578,28 @@ export type Database = {
           total_pago: number
         }[]
       }
+      cancelar_consumo_fiado: {
+        Args: { p_consumo_id: string; p_motivo?: string }
+        Returns: Json
+      }
+      cancelar_devolucao_credito: {
+        Args: { p_credito_devolucao_id: string; p_motivo?: string }
+        Returns: Json
+      }
       cancelar_pagamento_fiado: {
         Args: { p_motivo?: string; p_pagamento_id: string }
+        Returns: Json
+      }
+      cancelar_retirada_mercadoria: {
+        Args: { p_motivo?: string; p_retirada_id: string }
+        Returns: Json
+      }
+      cancelar_saida: {
+        Args: { p_motivo?: string; p_saida_id: string }
+        Returns: Json
+      }
+      cancelar_venda_direta: {
+        Args: { p_motivo?: string; p_venda_id: string }
         Returns: Json
       }
       complete_first_access: {
@@ -601,6 +621,16 @@ export type Database = {
           isSetofReturn: false
         }
       }
+      editar_consumo_fiado: {
+        Args: {
+          p_consumo_id: string
+          p_nova_data_movimento: string
+          p_nova_descricao: string
+          p_novo_cliente_id?: string
+          p_novo_valor_centavos: number
+        }
+        Returns: Json
+      }
       editar_pagamento_fiado: {
         Args: {
           p_nova_data_movimento: string
@@ -610,7 +640,41 @@ export type Database = {
         }
         Returns: Json
       }
+      editar_retirada_mercadoria: {
+        Args: {
+          p_nova_data_movimento: string
+          p_nova_descricao: string
+          p_novo_consumidor: string
+          p_novo_valor_centavos: number
+          p_retirada_id: string
+        }
+        Returns: Json
+      }
+      editar_saida: {
+        Args: {
+          p_nova_data_movimento: string
+          p_nova_descricao: string
+          p_nova_origem: string
+          p_novo_valor_centavos: number
+          p_saida_id: string
+        }
+        Returns: Json
+      }
+      editar_venda_direta: {
+        Args: {
+          p_nova_data_movimento: string
+          p_nova_descricao: string
+          p_nova_forma: string
+          p_novo_valor_centavos: number
+          p_venda_id: string
+        }
+        Returns: Json
+      }
       is_active_admin: { Args: { p_user_id?: string }; Returns: boolean }
+      recalcular_cliente_cronologico: {
+        Args: { p_cliente_id: string }
+        Returns: Json
+      }
       registrar_consumo_com_credito: {
         Args: {
           p_cliente_id: string

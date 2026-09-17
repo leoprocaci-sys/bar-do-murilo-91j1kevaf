@@ -11,6 +11,7 @@ import {
   Phone,
   ShieldAlert,
   CreditCard,
+  FileText,
 } from 'lucide-react'
 import Layout from '@/components/Layout'
 import { Button } from '@/components/ui/button'
@@ -90,15 +91,25 @@ export const FiadoLista = () => {
         </Button>
       </div>
 
-      {/* Ação rápida de Receber Pagamento Fiado (Regra 6: Acesso obrigatório na tela inicial do Caderno do Fiado) */}
-      <div className="mt-3">
+      {/* Ações Rápidas: Receber Pagamento Fiado + Relatórios do Fiado */}
+      <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-2">
         <Button
           type="button"
           onClick={() => navigate('/fiado/pagamento')}
-          className="h-13 w-full justify-center rounded-2xl border border-emerald-700/60 bg-emerald-950/40 text-base font-bold tracking-wide text-emerald-200 hover:bg-emerald-900/50 hover:border-emerald-600 active:scale-[0.98] transition-all"
+          className="h-12 w-full justify-center rounded-2xl border border-emerald-700/60 bg-emerald-950/40 text-sm font-bold tracking-wide text-emerald-200 hover:bg-emerald-900/50 hover:border-emerald-600 active:scale-[0.98] transition-all"
         >
-          <CreditCard className="mr-2.5 h-5 w-5 text-emerald-400" />
-          RECEBER PAGAMENTO DO FIADO
+          <CreditCard className="mr-2 h-4 w-4 text-emerald-400" />
+          RECEBER PAGAMENTO
+        </Button>
+
+        <Button
+          type="button"
+          variant="outline"
+          onClick={() => navigate('/fiado/relatorios')}
+          className="h-12 w-full justify-center rounded-2xl border-[#26332A] bg-[#141B15] text-sm font-bold tracking-wide text-[#F3EAD3] hover:bg-[#1E6B3A]/30 hover:border-[#1E6B3A] active:scale-[0.98] transition-all"
+        >
+          <FileText className="mr-2 h-4 w-4 text-[#1E6B3A]" />
+          RELATÓRIOS DO FIADO
         </Button>
       </div>
 

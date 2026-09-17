@@ -11,8 +11,21 @@ import {
   CheckCircle2,
   User,
   ArrowRight,
+  Camera,
+  Share2,
+  X,
+  MessageCircle,
 } from 'lucide-react'
 import Layout from '@/components/Layout'
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from '@/components/ui/dialog'
+import { gerarTextoConsumoFiado, compartilharDados } from '@/lib/whatsapp'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -38,6 +51,17 @@ export const FiadoConsumoForm = () => {
   const [dataMovimento, setDataMovimento] = useState(getTodayDateInput())
   const [valorInput, setValorInput] = useState('')
   const [descricao, setDescricao] = useState('')
+
+  // Frente 3: Foto temporária (NÃO salva no banco) e compartilhamento pós-registro
+  const [fotoTemporaria, setFotoTemporaria] = useState<File | null>(null)
+  const [fotoPreviewUrl, setFotoPreviewUrl] = useState<string | null>(null)
+  const [consumoRecemCriado, setConsumoRecemCriado] = useState<{
+    id: string
+    valorCentavos: number
+    descricao: string | null
+    dataMovimento: string
+  } | null>(null)
+  const [modalCompartilharAberto, setModalCompartilharAberto] = useState(false)
 
   // Estado de bloqueio / validação antes de confirmar
   const [, setErroValidacao] = useState<Extract<
@@ -96,12 +120,22 @@ export const FiadoConsumoForm = () => {
       queryClient.invalidateQueries({ queryKey: ['fiado-situacao', id] })
       queryClient.invalidateQueries({ queryKey: ['fiado-historico', id] })
       queryClient.invalidateQueries({ queryKey: ['fiado-clientes'] })
+      queryClient.invalidateQueries({ queryKey: ['caixa-movimentacao'] })
+      queryClient.invalidateQueries({ queryKey: ['caixa-home'] })
 
       toast({
         title: 'Consumo registrado!',
         description: `Lançado ${formatCentavos(novoConsumo.valor_centavos)} para ${cliente?.nome}.`,
       })
-      navigate(`/fiado/cliente/${id}`, { replace: true })
+
+      // Abre diálogo de compartilhamento (o consumo JÁ foi persistido)
+      setConsumoRecemCriado({
+        id: novoConsumo.id,
+        valorCentavos: novoConsumo.valor_centavos,
+        descricao: novoConsumo.descricao,
+        dataMovimento: novoConsumo.data_movimento,
+      })
+      setModalCompartilharAberto(true)
     },
     onError: (err: any) => {
       toast({
@@ -365,6 +399,70 @@ export const FiadoConsumoForm = () => {
           </strong>
         </div>
 
+        {/* FOTO AUXILIAR TEMPORÁRIA (FRENTE 3 — NÃO ARMAZENADA NO BANCO) */}
+        <div className="rounded-2xl border border-[#26332A] bg-[#141B15] p-4 space-y-2">
+          <div className="flex items-center justify-between">
+            <Label className="text-sm font-semibold text-[#F3EAD3] flex items-center gap-1.5">
+              <Camera className="h-4 w-4 text-[#1E6B3A]" />
+              Foto da Comanda / Itens (Opcional)
+            </Label>
+            <span className="text-[10px] text-[#879689]">Auxiliar • Não salva no banco</span>
+          </div>
+
+          <p className="text-[11px] text-[#A8B3A6]">
+            Você pode capturar ou anexar uma imagem temporária para enviar pelo WhatsApp junto ao
+            comprovante.
+          </p>
+
+          {fotoPreviewUrl ? (
+            <div className="relative mt-2 rounded-xl border border-[#26332A] bg-[#0B0F0C] p-2 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <img
+                  src={fotoPreviewUrl}
+                  alt="Pré-visualização"
+                  className="h-14 w-14 rounded-lg object-cover border border-[#26332A]"
+                />
+                <div>
+                  <p className="text-xs font-bold text-[#F3EAD3]">Foto selecionada</p>
+                  <p className="text-[10px] text-[#879689]">
+                    Será utilizada somente no compartilhamento
+                  </p>
+                </div>
+              </div>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setFotoTemporaria(null)
+                  setFotoPreviewUrl(null)
+                }}
+                className="text-red-400 hover:bg-red-950/40"
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+          ) : (
+            <label className="flex items-center justify-center gap-2 rounded-xl border border-dashed border-[#26332A] bg-[#0B0F0C] p-3 text-xs text-[#A8B3A6] hover:border-[#1E6B3A] hover:text-[#F3EAD3] cursor-pointer transition-colors">
+              <Camera className="h-4 w-4 text-[#1E6B3A]" />
+              <span>Tirar foto ou anexar imagem da comanda</span>
+              <input
+                type="file"
+                accept="image/*"
+                capture="environment"
+                className="sr-only"
+                onChange={(e) => {
+                  const file = e.target.files?.[0]
+                  if (file) {
+                    setFotoTemporaria(file)
+                    setFotoPreviewUrl(URL.createObjectURL(file))
+                  }
+                }}
+              />
+            </label>
+          )}
+        </div>
+
         {/* Botão de Confirmação */}
         <div className="pt-2">
           <Button
@@ -391,6 +489,97 @@ export const FiadoConsumoForm = () => {
           </Button>
         </div>
       </form>
+
+      {/* MODAL DE COMPARTILHAMENTO WHATSAPP PÓS-REGISTRO (FRENTE 3) */}
+      <Dialog
+        open={modalCompartilharAberto}
+        onOpenChange={(open) => {
+          if (!open) {
+            setModalCompartilharAberto(false)
+            navigate(`/fiado/cliente/${id}`)
+          }
+        }}
+      >
+        <DialogContent className="border-[#26332A] bg-[#141B15] text-[#F3EAD3] sm:max-w-md">
+          <DialogHeader>
+            <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-950/80 text-emerald-400 border border-emerald-800">
+              <Share2 className="h-6 w-6" />
+            </div>
+            <DialogTitle className="text-center text-lg font-bold text-[#F3EAD3] mt-2">
+              Consumo Salvo com Sucesso!
+            </DialogTitle>
+            <DialogDescription className="text-center text-xs text-[#A8B3A6]">
+              O lançamento já está registrado no caderno do cliente. Deseja compartilhar o
+              comprovante pelo WhatsApp?
+            </DialogDescription>
+          </DialogHeader>
+
+          {consumoRecemCriado && cliente && (
+            <div className="space-y-2 rounded-xl border border-[#26332A] bg-[#0B0F0C] p-3 text-xs">
+              <div className="flex justify-between py-1 border-b border-[#1C271E]">
+                <span className="text-[#A8B3A6]">Cliente:</span>
+                <strong className="text-[#F3EAD3]">{cliente.nome}</strong>
+              </div>
+              <div className="flex justify-between py-1 border-b border-[#1C271E]">
+                <span className="text-[#A8B3A6]">Valor lançado:</span>
+                <strong className="text-red-300">
+                  {formatCentavos(consumoRecemCriado.valorCentavos)}
+                </strong>
+              </div>
+              {consumoRecemCriado.descricao && (
+                <div className="flex justify-between py-1 border-b border-[#1C271E]">
+                  <span className="text-[#A8B3A6]">Itens:</span>
+                  <span>{consumoRecemCriado.descricao}</span>
+                </div>
+              )}
+              {cliente.telefone && (
+                <div className="flex justify-between py-1">
+                  <span className="text-[#A8B3A6]">Telefone WhatsApp:</span>
+                  <span className="font-semibold text-emerald-400">{cliente.telefone}</span>
+                </div>
+              )}
+            </div>
+          )}
+
+          <DialogFooter className="flex flex-col gap-2 mt-2 sm:flex-col">
+            <Button
+              type="button"
+              onClick={async () => {
+                if (!consumoRecemCriado || !cliente) return
+                const texto = gerarTextoConsumoFiado({
+                  clienteNome: cliente.nome,
+                  dataMovimento: consumoRecemCriado.dataMovimento,
+                  descricao: consumoRecemCriado.descricao,
+                  valorCentavos: consumoRecemCriado.valorCentavos,
+                })
+
+                await compartilharDados({
+                  telefone: cliente.telefone,
+                  texto,
+                  arquivoFoto: fotoTemporaria,
+                  titulo: `Consumo Fiado - ${cliente.nome}`,
+                })
+              }}
+              className="h-12 w-full rounded-xl bg-[#25D366] text-black font-extrabold hover:bg-[#20bd5a] flex items-center justify-center gap-2"
+            >
+              <MessageCircle className="h-5 w-5" />
+              COMPARTILHAR NO WHATSAPP
+            </Button>
+
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                setModalCompartilharAberto(false)
+                navigate(`/fiado/cliente/${id}`)
+              }}
+              className="h-11 w-full rounded-xl border-[#26332A] bg-[#0B0F0C] text-[#A8B3A6] hover:text-[#F3EAD3]"
+            >
+              CONCLUIR SEM COMPARTILHAR
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Layout>
   )
 }

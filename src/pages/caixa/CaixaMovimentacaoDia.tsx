@@ -19,6 +19,9 @@ import {
   Ban,
   AlertTriangle,
 } from 'lucide-react'
+import { ModalHistoricoRegistro } from '@/components/ModalHistoricoRegistro'
+import { getHistoricoRegistro } from '@/services/fiado'
+import type { HistoricoAuditoria } from '@/types/fiado'
 import Layout from '@/components/Layout'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -87,6 +90,11 @@ export const CaixaMovimentacaoDia = () => {
   // Estados dos modais de edição e cancelamento
   const [itemParaEditar, setItemParaEditar] = useState<MovimentacaoCaixaItem | null>(null)
   const [itemParaCancelar, setItemParaCancelar] = useState<MovimentacaoCaixaItem | null>(null)
+  const [itemParaVerHistorico, setItemParaVerHistorico] = useState<MovimentacaoCaixaItem | null>(
+    null,
+  )
+  const [historicoLogs, setHistoricoLogs] = useState<HistoricoAuditoria[]>([])
+  const [carregandoHistorico, setCarregandoHistorico] = useState<boolean>(false)
 
   // Campos do formulário de edição
   const [editValorInput, setEditValorInput] = useState('')
@@ -97,6 +105,20 @@ export const CaixaMovimentacaoDia = () => {
   const [editDataMovimento, setEditDataMovimento] = useState('')
 
   // Função para abrir o modal de edição correspondente
+  const abrirHistorico = async (item: MovimentacaoCaixaItem) => {
+    setItemParaVerHistorico(item)
+    setCarregandoHistorico(true)
+    try {
+      const logs = await getHistoricoRegistro(item.id)
+      setHistoricoLogs(logs)
+    } catch (e) {
+      console.error(e)
+      setHistoricoLogs([])
+    } finally {
+      setCarregandoHistorico(false)
+    }
+  }
+
   const abrirEdicao = (item: MovimentacaoCaixaItem) => {
     setItemParaEditar(item)
     setEditValorInput((item.valor_centavos / 100).toFixed(2).replace('.', ','))
@@ -423,31 +445,47 @@ export const CaixaMovimentacaoDia = () => {
                 </div>
               </div>
 
-              {/* Ações de Edição e Cancelamento para itens ativos */}
-              {item.status === 'ativo' && item.tipo !== 'dinheiro_inicial' && (
-                <div className="mt-3 flex items-center justify-end gap-1.5 border-t border-[#1C271E] pt-2">
+              {/* Ações: Histórico (para qualquer item), Edição e Cancelamento */}
+              {item.tipo !== 'dinheiro_inicial' && (
+                <div className="mt-3 flex items-center justify-end gap-1.5 border-t border-[#1C271E] pt-2 flex-wrap">
                   <Button
                     type="button"
                     variant="ghost"
                     size="sm"
-                    onClick={() => abrirEdicao(item)}
-                    className="h-7 px-2.5 text-xs font-semibold text-[#A8B3A6] hover:bg-[#1C271E] hover:text-[#F3EAD3]"
-                    title="Editar registro"
+                    onClick={() => abrirHistorico(item)}
+                    className="h-7 px-2 text-[11px] font-semibold text-[#879689] hover:bg-[#1C271E] hover:text-[#F3EAD3]"
+                    title="Ver histórico de alterações"
                   >
-                    <Pencil className="mr-1 h-3.5 w-3.5" />
-                    Editar
+                    <History className="mr-1 h-3.5 w-3.5 text-[#1E6B3A]" />
+                    Ver histórico
                   </Button>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => setItemParaCancelar(item)}
-                    className="h-7 px-2.5 text-xs font-semibold text-red-400 hover:bg-red-950/40 hover:text-red-300"
-                    title="Cancelar operação"
-                  >
-                    <Ban className="mr-1 h-3.5 w-3.5" />
-                    Cancelar
-                  </Button>
+
+                  {item.status === 'ativo' && (
+                    <>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => abrirEdicao(item)}
+                        className="h-7 px-2.5 text-xs font-semibold text-[#A8B3A6] hover:bg-[#1C271E] hover:text-[#F3EAD3]"
+                        title="Editar registro"
+                      >
+                        <Pencil className="mr-1 h-3.5 w-3.5" />
+                        Editar
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setItemParaCancelar(item)}
+                        className="h-7 px-2.5 text-xs font-semibold text-red-400 hover:bg-red-950/40 hover:text-red-300"
+                        title="Cancelar operação"
+                      >
+                        <Ban className="mr-1 h-3.5 w-3.5" />
+                        Cancelar
+                      </Button>
+                    </>
+                  )}
                 </div>
               )}
 
@@ -779,6 +817,22 @@ export const CaixaMovimentacaoDia = () => {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* MODAL 3: CONSULTA DE HISTÓRICO (BEFORE/AFTER) */}
+      <ModalHistoricoRegistro
+        aberto={Boolean(itemParaVerHistorico)}
+        onClose={() => setItemParaVerHistorico(null)}
+        titulo={itemParaVerHistorico?.titulo || 'Operação do Caixa'}
+        subtitulo={
+          itemParaVerHistorico
+            ? `${formatCentavos(itemParaVerHistorico.valor_centavos)} • ${formatDateBR(
+                itemParaVerHistorico.data_movimento,
+              )}`
+            : undefined
+        }
+        historico={historicoLogs}
+        isLoading={carregandoHistorico}
+      />
     </Layout>
   )
 }

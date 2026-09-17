@@ -25,7 +25,11 @@ import {
   Pencil,
   ArrowDownCircle,
   Check,
+  MessageCircle,
 } from 'lucide-react'
+import { ModalHistoricoRegistro } from '@/components/ModalHistoricoRegistro'
+import { getHistoricoRegistro } from '@/services/fiado'
+import { gerarTextoResumoFichaCliente, compartilharDados } from '@/lib/whatsapp'
 import Layout from '@/components/Layout'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -86,6 +90,12 @@ export const FiadoFichaCliente = () => {
   const [editConsumoData, setEditConsumoData] = useState('')
   const [editConsumoClienteDestinoId, setEditConsumoClienteDestinoId] = useState<string>('')
   const [consumoParaCancelar, setConsumoParaCancelar] = useState<MovimentacaoHistorico | null>(null)
+
+  // Estados para consulta de histórico pontual de consumo/pagamento
+  const [movimentoParaHistorico, setMovimentoParaHistorico] =
+    useState<MovimentacaoHistorico | null>(null)
+  const [logsMovimento, setLogsMovimento] = useState<HistoricoAuditoria[]>([])
+  const [carregandoLogsMovimento, setCarregandoLogsMovimento] = useState(false)
 
   // 1. Dados cadastrais do cliente
   const {
@@ -284,6 +294,20 @@ export const FiadoFichaCliente = () => {
     setEditConsumoClienteDestinoId(id || '')
   }
 
+  const abrirHistoricoMovimento = async (item: MovimentacaoHistorico) => {
+    setMovimentoParaHistorico(item)
+    setCarregandoLogsMovimento(true)
+    try {
+      const logs = await getHistoricoRegistro(item.id)
+      setLogsMovimento(logs)
+    } catch (e) {
+      console.error(e)
+      setLogsMovimento([])
+    } finally {
+      setCarregandoLogsMovimento(false)
+    }
+  }
+
   const recarregarTudo = () => {
     refetchCliente()
     refetchSituacao()
@@ -460,6 +484,27 @@ export const FiadoFichaCliente = () => {
         >
           <PlusCircle className="mr-2.5 h-6 w-6" />
           REGISTRAR CONSUMO
+        </Button>
+      </div>
+
+      {/* Compartilhar Resumo da Ficha via WhatsApp (Frente 3) */}
+      <div className="mt-2.5">
+        <Button
+          type="button"
+          variant="outline"
+          onClick={async () => {
+            if (!cliente || !situacao) return
+            const texto = gerarTextoResumoFichaCliente({ cliente, situacao })
+            await compartilharDados({
+              telefone: cliente.telefone,
+              texto,
+              titulo: `Extrato Fiado - ${cliente.nome}`,
+            })
+          }}
+          className="h-11 w-full justify-center rounded-xl border-[#26332A] bg-[#141B15] text-xs font-bold text-[#F3EAD3] hover:bg-[#1E6B3A]/20 hover:border-[#1E6B3A] active:scale-[0.98] transition-all"
+        >
+          <MessageCircle className="mr-2 h-4 w-4 text-[#25D366]" />
+          COMPARTILHAR EXTRATO NO WHATSAPP
         </Button>
       </div>
 
@@ -640,61 +685,74 @@ export const FiadoFichaCliente = () => {
                           {formatCentavos(item.valor_centavos)}
                         </p>
 
-                        {/* Ações para pagamentos ativos: Editar e Cancelar */}
-                        {item.tipo === 'pagamento' && item.status === 'ativo' && (
-                          <div className="mt-1.5 flex items-center justify-end gap-1">
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => abrirEdicaoPagamento(item)}
-                              className="h-7 px-2 text-[11px] font-semibold text-[#A8B3A6] hover:bg-[#1C271E] hover:text-[#F3EAD3]"
-                              title="Corrigir valor, forma ou data"
-                            >
-                              <Pencil className="mr-1 h-3 w-3" />
-                              Editar
-                            </Button>
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => setPagamentoParaCancelar(item)}
-                              className="h-7 px-2 text-[11px] font-semibold text-red-400 hover:bg-red-950/40 hover:text-red-300"
-                              title="Cancelar pagamento"
-                            >
-                              <Ban className="mr-1 h-3 w-3" />
-                              Cancelar
-                            </Button>
-                          </div>
-                        )}
+                        {/* Ações para itens: Ver Histórico, Editar e Cancelar */}
+                        <div className="mt-1.5 flex items-center justify-end gap-1 flex-wrap">
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => abrirHistoricoMovimento(item)}
+                            className="h-7 px-2 text-[11px] font-semibold text-[#879689] hover:bg-[#1C271E] hover:text-[#F3EAD3]"
+                            title="Ver histórico de alterações"
+                          >
+                            <History className="mr-1 h-3 w-3 text-[#1E6B3A]" />
+                            Ver histórico
+                          </Button>
 
-                        {/* Ações para consumos ativos: Editar (inclui troca de cliente) e Cancelar */}
-                        {item.tipo === 'consumo' && item.status === 'ativo' && (
-                          <div className="mt-1.5 flex items-center justify-end gap-1">
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => abrirEdicaoConsumo(item)}
-                              className="h-7 px-2 text-[11px] font-semibold text-[#A8B3A6] hover:bg-[#1C271E] hover:text-[#F3EAD3]"
-                              title="Corrigir valor, data, descrição ou cliente"
-                            >
-                              <Pencil className="mr-1 h-3 w-3" />
-                              Editar
-                            </Button>
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => setConsumoParaCancelar(item)}
-                              className="h-7 px-2 text-[11px] font-semibold text-red-400 hover:bg-red-950/40 hover:text-red-300"
-                              title="Cancelar consumo"
-                            >
-                              <Ban className="mr-1 h-3 w-3" />
-                              Cancelar
-                            </Button>
-                          </div>
-                        )}
+                          {item.tipo === 'pagamento' && item.status === 'ativo' && (
+                            <>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => abrirEdicaoPagamento(item)}
+                                className="h-7 px-2 text-[11px] font-semibold text-[#A8B3A6] hover:bg-[#1C271E] hover:text-[#F3EAD3]"
+                                title="Corrigir valor, forma ou data"
+                              >
+                                <Pencil className="mr-1 h-3 w-3" />
+                                Editar
+                              </Button>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => setPagamentoParaCancelar(item)}
+                                className="h-7 px-2 text-[11px] font-semibold text-red-400 hover:bg-red-950/40 hover:text-red-300"
+                                title="Cancelar pagamento"
+                              >
+                                <Ban className="mr-1 h-3 w-3" />
+                                Cancelar
+                              </Button>
+                            </>
+                          )}
+
+                          {item.tipo === 'consumo' && item.status === 'ativo' && (
+                            <>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => abrirEdicaoConsumo(item)}
+                                className="h-7 px-2 text-[11px] font-semibold text-[#A8B3A6] hover:bg-[#1C271E] hover:text-[#F3EAD3]"
+                                title="Corrigir valor, data, descrição ou cliente"
+                              >
+                                <Pencil className="mr-1 h-3 w-3" />
+                                Editar
+                              </Button>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => setConsumoParaCancelar(item)}
+                                className="h-7 px-2 text-[11px] font-semibold text-red-400 hover:bg-red-950/40 hover:text-red-300"
+                                title="Cancelar consumo"
+                              >
+                                <Ban className="mr-1 h-3 w-3" />
+                                Cancelar
+                              </Button>
+                            </>
+                          )}
+                        </div>
                       </div>
                     </div>
 
@@ -1286,6 +1344,22 @@ export const FiadoFichaCliente = () => {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* MODAL 5: CONSULTA DE HISTÓRICO PONTUAL DE MOVIMENTO (BEFORE/AFTER) */}
+      <ModalHistoricoRegistro
+        aberto={Boolean(movimentoParaHistorico)}
+        onClose={() => setMovimentoParaHistorico(null)}
+        titulo={movimentoParaHistorico?.origem || 'Lançamento do Fiado'}
+        subtitulo={
+          movimentoParaHistorico
+            ? `${formatCentavos(movimentoParaHistorico.valor_centavos)} • ${formatDateBR(
+                movimentoParaHistorico.data_movimento,
+              )}`
+            : undefined
+        }
+        historico={logsMovimento}
+        isLoading={carregandoLogsMovimento}
+      />
     </Layout>
   )
 }
