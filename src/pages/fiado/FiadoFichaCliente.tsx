@@ -65,7 +65,12 @@ import {
   formatDateTimeBR,
   parseBRLToCentavos,
 } from '@/lib/formatters'
-import type { Cliente, FormaPagamento, MovimentacaoHistorico } from '@/types/fiado'
+import type {
+  Cliente,
+  FormaPagamento,
+  HistoricoAuditoria,
+  MovimentacaoHistorico,
+} from '@/types/fiado'
 
 export const FiadoFichaCliente = () => {
   const { id } = useParams<{ id: string }>()
