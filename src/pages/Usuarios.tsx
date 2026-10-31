@@ -1,5 +1,14 @@
 import { useEffect, useMemo, useState } from 'react'
-import { KeyRound, LoaderCircle, Plus, Power, PowerOff, ShieldCheck, UserRound } from 'lucide-react'
+import {
+  KeyRound,
+  LoaderCircle,
+  Mail,
+  Plus,
+  Power,
+  PowerOff,
+  ShieldCheck,
+  UserRound,
+} from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import Layout from '@/components/Layout'
 import { ProvisionalPasswordDialog } from '@/components/ProvisionalPasswordDialog'
@@ -120,14 +129,26 @@ const Usuarios = () => {
             <p className="text-[#A8B3A6]">Administradores do bar</p>
           </div>
         </div>
-        <Button
-          type="button"
-          className="mt-5 h-14 w-full rounded-2xl bg-[#1E6B3A] text-base font-bold hover:bg-[#25814A]"
-          onClick={() => navigate('/usuarios/novo')}
-        >
-          <Plus className="mr-2 h-5 w-5" />
-          CADASTRAR USUÁRIO
-        </Button>
+        <div className="mt-5 grid grid-cols-1 gap-2.5 sm:grid-cols-2">
+          <Button
+            type="button"
+            className="h-14 rounded-2xl bg-[#1E6B3A] text-base font-bold hover:bg-[#25814A]"
+            onClick={() => navigate('/usuarios/novo')}
+          >
+            <Plus className="mr-2 h-5 w-5" />
+            CADASTRAR USUÁRIO
+          </Button>
+
+          <Button
+            type="button"
+            variant="outline"
+            className="h-14 rounded-2xl border-[#26332A] bg-[#141B15] text-base font-bold text-[#F3EAD3] hover:bg-[#1A251C]"
+            onClick={() => navigate('/usuarios/meu-email')}
+          >
+            <Mail className="mr-2 h-5 w-5 text-[#F2B705]" />
+            MEU E-MAIL
+          </Button>
+        </div>
 
         {/* B02: Alternador discreto para contas técnicas / de teste */}
         <div className="mt-3 flex items-center justify-between text-xs text-[#879689]">

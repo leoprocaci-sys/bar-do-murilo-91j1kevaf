@@ -26,28 +26,19 @@ export const EsqueciSenha = () => {
       const { data, error } = await supabase.functions.invoke<{
         ok?: boolean
         message?: string
-        hasRealEmail?: boolean
         code?: string
       }>('request-password-reset', {
         body: { username: trimmed },
       })
 
       if (error) {
-        // Mensagem neutra de segurança
         setResultMessage(
           'Se o nome de usuário estiver cadastrado e tiver um e-mail configurado, as instruções de recuperação serão enviadas.',
-        )
-      } else if (data?.code === 'only_technical_email') {
-        // Orientação específica quando a conta só possui e-mail técnico .local
-        setIsAlert(true)
-        setResultMessage(
-          data.message ||
-            'Esta conta ainda não possui e-mail cadastrado para recuperação automática. Procure um administrador do bar para redefinir sua senha.',
         )
       } else if (data?.code === 'rate_limited') {
         setIsAlert(true)
         setResultMessage(
-          data.message || 'Muitas tentativas recentes. Aguarde alguns minutos e tente novamente.',
+          data.message || 'Muitas tentativas recentes. Aguarde 15 minutos e tente novamente.',
         )
       } else {
         setResultMessage(
@@ -75,6 +66,10 @@ export const EsqueciSenha = () => {
           </h1>
           <p className="mt-2 text-base text-[#A8B3A6]">
             Informe seu nome de usuário habitual do bar para receber o link de recuperação.
+          </p>
+          <p className="mt-2 text-xs text-[#879689]">
+            Caso sua conta ainda não possua e-mail configurado para recuperação automática, procure
+            um administrador do bar para redefinição manual.
           </p>
         </div>
 

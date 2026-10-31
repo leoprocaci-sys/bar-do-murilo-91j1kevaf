@@ -25,9 +25,6 @@ type AuthContextValue = {
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined)
 
-const technicalEmail = (username: string) =>
-  `${username.trim().toLocaleLowerCase('pt-BR')}@bar-do-murilo.local`
-
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [session, setSession] = useState<Session | null>(null)
   const [user, setUser] = useState<User | null>(null)
@@ -95,22 +92,61 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   }, [])
 
   const signIn = useCallback(async (username: string, password: string) => {
-    const { data, error } = await supabase.auth.signInWithPassword({
-      email: technicalEmail(username),
-      password,
-    })
-    if (error || !data.user) throw error ?? new Error('Sessão não iniciada.')
+    const normalizedUsername = username.trim().toLocaleLowerCase('pt-BR')
 
+    // Chama a nova Edge Function user-login com { username, senha }
+    const { data: loginData, error: invokeError } = await supabase.functions.invoke<{
+      ok?: boolean
+      error?: string
+      code?: string
+      session?: {
+        access_token: string
+        refresh_token: string
+        expires_in?: number
+        token_type?: string
+        user?: User
+      }
+      appUser?: AppUser
+    }>('user-login', {
+      body: { username: normalizedUsername, senha: password },
+    })
+
+    if (invokeError || !loginData?.ok || !loginData.session) {
+      const errorMsg = loginData?.error || invokeError?.message || 'invalid login credentials'
+      const err = new Error(errorMsg)
+      ;(err as { status?: number }).status = 400
+      throw err
+    }
+
+    // Instala os tokens de sessão via supabase.auth.setSession
+    const { data: sessionResult, error: setSessionError } = await supabase.auth.setSession({
+      access_token: loginData.session.access_token,
+      refresh_token: loginData.session.refresh_token,
+    })
+
+    if (setSessionError || !sessionResult.session?.user) {
+      throw setSessionError ?? new Error('Não foi possível estabelecer a sessão de autenticação.')
+    }
+
+    // Validação pós-login existente em app_users (ativo, perfil administrador, signOut se inválido)
     try {
-      const profile = await getAppUser(data.user.id)
+      const profile = await getAppUser(sessionResult.session.user.id)
       if (!profile?.ativo || profile.perfil !== 'administrador') {
         await supabase.auth.signOut()
+        setSession(null)
+        setUser(null)
+        setAppUser(null)
         throw new Error('unauthorized_app_user')
       }
+      setSession(sessionResult.session)
+      setUser(sessionResult.session.user)
       setAppUser(profile)
       return profile
     } catch (profileError) {
       await supabase.auth.signOut()
+      setSession(null)
+      setUser(null)
+      setAppUser(null)
       throw profileError
     }
   }, [])

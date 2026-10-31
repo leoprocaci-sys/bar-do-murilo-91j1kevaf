@@ -21,40 +21,41 @@ export const RedefinirSenha = () => {
   useEffect(() => {
     let active = true
 
-    // O link do Supabase traz o token no hash (#access_token=...&type=recovery)
-    // O supabase-js automaticamente extrai e inicia uma sessão tipo recovery.
-    const checkRecoverySession = async () => {
-      try {
-        const { data } = await supabase.auth.getSession()
-        if (!active) return
-
-        if (data.session) {
-          setSessionValid(true)
-        } else {
-          // Tenta verificar se há evento de recovery
-          setSessionValid(false)
-        }
-      } catch {
-        if (active) setSessionValid(false)
-      } finally {
-        if (active) setCheckingSession(false)
-      }
-    }
+    // A troca de senha SÓ É PERMITIDA com confirmação válida do fluxo oficial de RECUPERAÇÃO do Supabase.
+    // O link de recuperação do Supabase traz tokens no hash (#access_token=...&type=recovery).
+    // O evento oficial disparado é PASSWORD_RECOVERY.
+    // Uma sessão comum de login (ou abertura direta sem hash de recovery) NÃO comprova recuperação e deve ser bloqueada.
+    const isRecoveryHash =
+      window.location.hash.includes('type=recovery') ||
+      window.location.hash.includes('access_token=')
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((event, session) => {
+    } = supabase.auth.onAuthStateChange((event) => {
       if (!active) return
-      if (event === 'PASSWORD_RECOVERY' || (session && event === 'SIGNED_IN')) {
+      if (event === 'PASSWORD_RECOVERY') {
         setSessionValid(true)
         setCheckingSession(false)
       }
     })
 
-    void checkRecoverySession()
+    // Dá um breve tempo para o GoTrue processar o hash da URL se presente
+    const timer = setTimeout(() => {
+      if (!active) return
+      if (!isRecoveryHash) {
+        // Se a página não veio com parâmetros de recovery no hash, invalida diretamente
+        setSessionValid(false)
+        setCheckingSession(false)
+      } else {
+        // Caso houvesse hash mas o evento PASSWORD_RECOVERY não disparou após 2s, invalida
+        setSessionValid((prev) => (prev === true ? true : false))
+        setCheckingSession(false)
+      }
+    }, 1500)
 
     return () => {
       active = false
+      clearTimeout(timer)
       subscription.unsubscribe()
     }
   }, [])

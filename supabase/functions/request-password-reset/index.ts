@@ -19,7 +19,8 @@ const jsonResponse = (body: unknown, status = 200) =>
 
 const normalizeUsername = (value: string) => value.trim().toLocaleLowerCase('pt-BR')
 
-// Mensagem padronizada sempre neutra para proteger contra enumeração
+// Mensagem padronizada sempre neutra e IDÊNTICA para todo username
+// (inexistente, desativado, sem e-mail real e com e-mail real recebem exatamente a mesma resposta)
 const NEUTRAL_RESPONSE = {
   ok: true,
   message:
@@ -57,7 +58,7 @@ Deno.serve(async (req: Request) => {
       return jsonResponse(NEUTRAL_RESPONSE, 200)
     }
 
-    // Rate limiting simples por identificador (username ou IP do cliente)
+    // Rate limiting por identificador (username ou IP do cliente)
     const clientIp = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'unknown'
     const rateLimitKey = `${username}_${clientIp}`
     const fifteenMinutesAgo = new Date(Date.now() - 15 * 60 * 1000).toISOString()
@@ -71,7 +72,6 @@ Deno.serve(async (req: Request) => {
     if (countError) {
       console.error('Erro ao verificar rate limit:', countError)
     } else if ((attemptsCount ?? 0) >= 5) {
-      // Bloqueio por abuso temporário: retorna mensagem de limite
       return jsonResponse(
         {
           ok: false,
@@ -101,50 +101,49 @@ Deno.serve(async (req: Request) => {
       return jsonResponse(NEUTRAL_RESPONSE, 200)
     }
 
-    // 2. Verifica se há e-mail real cadastrado na tabela privada
-    const { data: emailRecord } = await adminClient
-      .from('app_user_emails')
-      .select('email_real, verificado')
-      .eq('user_id', appUser.id)
-      .maybeSingle()
+    // 2. Consulta o e-mail CONFIRMADO da identidade em auth.users (Admin API por UUID)
+    // Conforme especificação 3(b): "consultar somente o e-mail CONFIRMADO da identidade em auth.users
+    // (Admin API por UUID via app_user_emails) — não usar o campo verificado de app_user_emails como fonte"
+    const { data: authUserData, error: authUserError } = await adminClient.auth.admin.getUserById(
+      appUser.id,
+    )
 
-    const emailReal = emailRecord?.email_real?.trim()
-
-    // Se NÃO houver e-mail real, a conta possui apenas e-mail técnico .local
-    // Conforme especificação 1.4:
-    // (a) usar e-mail real quando houver;
-    // (b) enquanto não houver, o fluxo deve detectar que a conta só tem e-mail técnico .local
-    // e orientar o usuário a procurar o administrador (redefinição administrativa).
-    if (!emailReal) {
-      return jsonResponse(
-        {
-          ok: false,
-          hasRealEmail: false,
-          code: 'only_technical_email',
-          message:
-            'Esta conta ainda não possui e-mail cadastrado para recuperação automática. Procure um administrador do bar para redefinir sua senha.',
-        },
-        200,
-      )
+    if (authUserError || !authUserData?.user) {
+      return jsonResponse(NEUTRAL_RESPONSE, 200)
     }
 
-    // 3. Há e-mail real! Disparar resetPasswordForEmail oficial
-    // URL oficial de produção: https://bar-do-murilo-d9d01.goskip.app/redefinir-senha
+    const authUser = authUserData.user
+    const emailFromAuth = authUser.email?.trim() || ''
+    const isEmailConfirmed = Boolean(authUser.email_confirmed_at)
+
+    // 3. NÃO chamar resetPasswordForEmail para endereços .local
+    // Se o e-mail for .local ou se NÃO estiver confirmado, não envia nada e responde neutro
+    const isLocalEmail = emailFromAuth.endsWith('.local')
+
+    if (!emailFromAuth || isLocalEmail || !isEmailConfirmed) {
+      // E-mail fictício ou não confirmado: não dispara envio
+      // Resposta rigorosamente uniforme para proteger contra enumeração
+      return jsonResponse(NEUTRAL_RESPONSE, 200)
+    }
+
+    // 4. Há e-mail real confirmado em auth.users! Disparar resetPasswordForEmail oficial
     const redirectTo = 'https://bar-do-murilo-d9d01.goskip.app/redefinir-senha'
 
-    const { error: resetError } = await adminClient.auth.resetPasswordForEmail(emailReal, {
+    const { error: resetError } = await adminClient.auth.resetPasswordForEmail(emailFromAuth, {
       redirectTo,
     })
 
     if (resetError) {
       console.error('Erro ao chamar resetPasswordForEmail:', resetError.message)
-      // Não vaza detalhes de infraestrutura
       return jsonResponse(NEUTRAL_RESPONSE, 200)
     }
 
     return jsonResponse(NEUTRAL_RESPONSE, 200)
   } catch (err) {
-    console.error('Erro na função request-password-reset:', err)
+    console.error(
+      'Erro na função request-password-reset:',
+      err instanceof Error ? err.message : String(err),
+    )
     return jsonResponse(NEUTRAL_RESPONSE, 200)
   }
 })

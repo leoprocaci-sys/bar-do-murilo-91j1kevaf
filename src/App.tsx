@@ -19,6 +19,7 @@ import CaixaRelatorios from '@/pages/caixa/CaixaRelatorios'
 import CaixaConsumoPessoa from '@/pages/caixa/CaixaConsumoPessoa'
 import Usuarios from '@/pages/Usuarios'
 import NovoUsuario from '@/pages/NovoUsuario'
+import MeuEmail from '@/pages/MeuEmail'
 import NotFound from '@/pages/NotFound'
 import FiadoLista from '@/pages/fiado/FiadoLista'
 import FiadoBloqueados from '@/pages/fiado/FiadoBloqueados'
@@ -213,6 +214,14 @@ const App = () => (
               element={
                 <Protected>
                   <NovoUsuario />
+                </Protected>
+              }
+            />
+            <Route
+              path="/usuarios/meu-email"
+              element={
+                <Protected>
+                  <MeuEmail />
                 </Protected>
               }
             />
