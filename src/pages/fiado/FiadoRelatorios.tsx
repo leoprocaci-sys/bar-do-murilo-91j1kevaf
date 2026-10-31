@@ -13,6 +13,7 @@ import {
   ChevronUp,
   User,
   Info,
+  Printer,
 } from 'lucide-react'
 import { Layout } from '@/components/Layout'
 import { Button } from '@/components/ui/button'
@@ -92,7 +93,32 @@ export function FiadoRelatorios() {
             Evolução real de dívidas e créditos por cliente no período selecionado.
           </p>
         </div>
+
+        {relatorio && (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => window.print()}
+            className="no-print self-start sm:self-auto h-10 border-[#26332A] bg-[#141B15] text-xs font-bold text-[#F3EAD3] hover:bg-[#1E6B3A]"
+          >
+            <Printer className="mr-1.5 h-4 w-4" />
+            IMPRIMIR / PDF
+          </Button>
+        )}
       </div>
+
+      {/* Cabeçalho impresso oficial */}
+      {relatorio && (
+        <div className="hidden print:block my-4 border-b border-black pb-2 text-black">
+          <h2 className="text-lg font-bold">Bar do Murilo — Relatório do Fiado</h2>
+          <p className="text-xs">
+            Período: {relatorio.tituloPeriodo} ({formatDateBR(relatorio.dataInicio)} a{' '}
+            {formatDateBR(relatorio.dataFim)}) | Emissão: {new Date().toLocaleDateString('pt-BR')}{' '}
+            às {new Date().toLocaleTimeString('pt-BR')}
+          </p>
+        </div>
+      )}
 
       {/* Controles de Filtro de Período (Mensal / Anual) */}
       <div className="mt-4 rounded-2xl border border-[#26332A] bg-[#141B15] p-3 sm:p-4 space-y-3">

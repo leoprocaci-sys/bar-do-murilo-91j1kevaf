@@ -13,6 +13,7 @@ import {
   ShoppingBag,
   Info,
   Users,
+  Printer,
 } from 'lucide-react'
 import Layout from '@/components/Layout'
 import { Button } from '@/components/ui/button'
@@ -54,6 +55,19 @@ export const CaixaRelatorios = () => {
             Consolidação por fontes transacionais (Dia, Semana seg-dom, Mês)
           </p>
         </div>
+
+        {relatorio && (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => window.print()}
+            className="no-print self-start sm:self-auto h-10 border-[#26332A] bg-[#141B15] text-xs font-bold text-[#F3EAD3] hover:bg-[#1E6B3A]"
+          >
+            <Printer className="mr-1.5 h-4 w-4" />
+            IMPRIMIR / PDF
+          </Button>
+        )}
 
         {/* Seletor de Data Base */}
         <div className="flex items-center gap-2 rounded-2xl border border-[#26332A] bg-[#141B15] px-3 py-2">
@@ -113,6 +127,17 @@ export const CaixaRelatorios = () => {
         <div className="mt-3 flex items-center justify-between rounded-xl border border-[#26332A] bg-[#0B0F0C] px-4 py-2.5 text-xs">
           <span className="text-[#A8B3A6]">Período consultado:</span>
           <strong className="text-[#F2B705] font-bold">{relatorio.tituloPeriodo}</strong>
+        </div>
+      )}
+
+      {/* Cabeçalho impresso oficial */}
+      {relatorio && (
+        <div className="hidden print:block my-4 border-b border-black pb-2 text-black">
+          <h2 className="text-lg font-bold">Bar do Murilo — Relatório de Caixa</h2>
+          <p className="text-xs">
+            Período: {relatorio.tituloPeriodo} | Emissão: {new Date().toLocaleDateString('pt-BR')}{' '}
+            às {new Date().toLocaleTimeString('pt-BR')}
+          </p>
         </div>
       )}
 

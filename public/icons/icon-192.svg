@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 192 192" width="192" height="192">
+  <rect width="192" height="192" rx="36" fill="#0B0F0C" />
+  <circle cx="96" cy="96" r="76" fill="#141B15" stroke="#1E6B3A" stroke-width="4" />
+  <!-- Logo / Ícone de Caneco de Chopp e Letra M em Dourado e Verde -->
+  <path d="M68 64 h48 v54 a12 12 0 0 1 -12 12 h-24 a12 12 0 0 1 -12 -12 z" fill="#F2B705" />
+  <path d="M116 74 h12 a10 10 0 0 1 10 10 v16 a10 10 0 0 1 -10 10 h-12" fill="none" stroke="#F2B705" stroke-width="8" stroke-linecap="round" />
+  <path d="M64 64 c0 -8 8 -12 14 -12 c6 0 10 4 14 4 c4 0 8 -4 14 -4 c6 0 14 4 14 12" fill="#F3EAD3" />
+  <text x="96" y="162" text-anchor="middle" font-family="sans-serif" font-weight="900" font-size="16" fill="#F3EAD3" letter-spacing="1">BAR DO MURILO</text>
+</svg>

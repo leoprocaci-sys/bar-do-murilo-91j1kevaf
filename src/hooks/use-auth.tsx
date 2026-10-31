@@ -116,9 +116,13 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   }, [])
 
   const signOut = useCallback(async () => {
-    const { error } = await supabase.auth.signOut()
-    setAppUser(null)
-    if (error) throw error
+    try {
+      await supabase.auth.signOut()
+    } finally {
+      setSession(null)
+      setUser(null)
+      setAppUser(null)
+    }
   }, [])
 
   const value = useMemo<AuthContextValue>(

@@ -148,9 +148,50 @@
   *,
   *::before,
   *::after {
-    scroll-behavior: auto !important;
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Estilos de impressão profissional para relatórios */
+@media print {
+  body {
+    background: #ffffff !important;
+    color: #000000 !important;
+  }
+
+  .no-print,
+  button,
+  header {
+    display: none !important;
+  }
+
+  .print-only {
+    display: block !important;
+  }
+
+  .print-area {
+    max-width: 100% !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    color: #111111 !important;
+  }
+
+  .print-card {
+    background: #ffffff !important;
+    border: 1px solid #cccccc !important;
+    color: #111111 !important;
+    page-break-inside: avoid;
+    box-shadow: none !important;
+  }
+
+  .print-text-dark {
+    color: #111111 !important;
+  }
+
+  .print-text-muted {
+    color: #555555 !important;
   }
 }

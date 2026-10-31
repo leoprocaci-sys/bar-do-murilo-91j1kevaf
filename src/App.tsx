@@ -6,6 +6,8 @@ import { AuthGuard } from '@/components/AuthGuard'
 import { AuthProvider } from '@/hooks/use-auth'
 import Index from '@/pages/Index'
 import Login from '@/pages/Login'
+import EsqueciSenha from '@/pages/EsqueciSenha'
+import RedefinirSenha from '@/pages/RedefinirSenha'
 import PrimeiroAcesso from '@/pages/PrimeiroAcesso'
 import CaixaHome from '@/pages/caixa/CaixaHome'
 import CaixaVendaForm from '@/pages/caixa/CaixaVendaForm'
@@ -44,6 +46,8 @@ const App = () => (
         <AuthProvider>
           <Routes>
             <Route path="/login" element={<Login />} />
+            <Route path="/esqueci-senha" element={<EsqueciSenha />} />
+            <Route path="/redefinir-senha" element={<RedefinirSenha />} />
             <Route
               path="/primeiro-acesso"
               element={

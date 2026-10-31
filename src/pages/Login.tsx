@@ -96,6 +96,15 @@ const Login = () => {
             onChange={(event) => setPassword(event.target.value)}
             required
           />
+          <div className="flex justify-end">
+            <button
+              type="button"
+              onClick={() => navigate('/esqueci-senha')}
+              className="text-sm font-semibold text-[#A8B3A6] transition-colors hover:text-[#F3EAD3] hover:underline"
+            >
+              Esqueci minha senha
+            </button>
+          </div>
           {formError && (
             <div
               role="alert"

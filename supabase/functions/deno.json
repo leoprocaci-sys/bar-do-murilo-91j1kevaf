@@ -1,5 +1,6 @@
 {
   "_versions": {
-    "admin-users": 12
+    "admin-users": 12,
+    "request-password-reset": 1
   }
 }
