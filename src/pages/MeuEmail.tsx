@@ -1,42 +1,181 @@
-import { useState, type FormEvent } from 'react'
-import { ArrowLeft, Mail, AlertCircle, Info, Lock } from 'lucide-react'
+import { useEffect, useState, type FormEvent } from 'react'
+import {
+  ArrowLeft,
+  Mail,
+  AlertCircle,
+  Info,
+  CheckCircle2,
+  Clock,
+  LoaderCircle,
+  ShieldCheck,
+  Send,
+} from 'lucide-react'
 import { Link } from 'react-router-dom'
 import Layout from '@/components/Layout'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { useAuth } from '@/hooks/use-auth'
+import { useToast } from '@/hooks/use-toast'
+import { supabase } from '@/lib/supabase/client'
+import {
+  checkEmailDisponivel,
+  getMeuEmailRecord,
+  registrarIntencaoEmail,
+  type AppUserEmailRecord,
+} from '@/services/meu-email'
 
-/**
- * Interface de gestão do próprio e-mail (usuário logado informa o SEU endereço real).
- *
- * STATUS NESTA VERSÃO: PREPARADA, NÃO ATIVA (DESABILITADA).
- *
- * MOTIVOS E DECISÃO ADMINISTRATIVA PENDENTE:
- * 1. O Supabase do projeto está SEM provedor SMTP próprio configurado e o serviço de envio padrão
- *    não entrega mensagens a destinatários externos à equipe.
- * 2. Decisão administrativa PENDENTE sobre "Secure Email Change": por padrão, o Supabase Auth exige
- *    confirmação enviada tanto ao novo e-mail quanto ao e-mail ANTIGO. Como o e-mail antigo de todas
- *    as contas atuais é fictício (.local), a confirmação do e-mail antigo não é viável sem desabilitar
- *    previamente a opção "Secure Email Change" no painel do Supabase Auth ou realizar migração assistida.
- *    Portanto, nenhuma alteração de e-mail é disparada nesta rodada.
- */
 export const MeuEmail = () => {
   const { user, appUser } = useAuth()
+  const { toast } = useToast()
+
+  const [emailRecord, setEmailRecord] = useState<AppUserEmailRecord | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [submitting, setSubmitting] = useState(false)
   const [novoEmail, setNovoEmail] = useState('')
+  const [senhaConfirmacao, setSenhaConfirmacao] = useState('')
+  const [erroEmail, setErroEmail] = useState('')
+  const [erroSenha, setErroSenha] = useState('')
+  const [sucessoSolicitacao, setSucessoSolicitacao] = useState<string | null>(null)
 
-  // Chamada preparada para uso futuro quando SMTP e decisão administrativa forem homologados:
-  // const handleSubmit = async (e: FormEvent) => {
-  //   e.preventDefault()
-  //   const { error } = await supabase.auth.updateUser({ email: novoEmail.trim() })
-  //   ...
-  // }
+  const emailAuth = user?.email ?? ''
+  const isAuthTecnico = emailAuth.endsWith('.local')
+  const isAuthConfirmado = Boolean(user?.email_confirmed_at) && !isAuthTecnico
 
-  const handleBlockedSubmit = (e: FormEvent) => {
-    e.preventDefault()
+  // Determinação dos 3 estados explícitos:
+  // 1. E-mail confirmado (identidade no Auth confirmada e não .local, ou app_user_emails verificado = true)
+  // 2. Confirmação pendente (há e-mail real registrado aguardando clique de confirmação)
+  // 3. E-mail técnico (.local ativo, nenhum e-mail real ainda cadastrado ou confirmado)
+  const isConfirmado = isAuthConfirmado || Boolean(emailRecord?.verificado)
+  const isPendente =
+    !isConfirmado &&
+    (Boolean(emailRecord?.email_real && !emailRecord.verificado) || Boolean(sucessoSolicitacao))
+  const isTecnicoApenas = !isConfirmado && !isPendente
+
+  const loadData = async () => {
+    try {
+      setLoading(true)
+      const record = await getMeuEmailRecord()
+      setEmailRecord(record)
+      if (record?.email_real && !record.verificado) {
+        setNovoEmail(record.email_real)
+      } else if (record?.email_real && record.verificado) {
+        setNovoEmail(record.email_real)
+      }
+    } catch (err) {
+      console.error('Erro ao carregar dados do e-mail:', err)
+    } finally {
+      setLoading(false)
+    }
   }
 
-  const emailAtual = user?.email ?? ''
-  const isEmailTecnico = emailAtual.endsWith('.local')
+  useEffect(() => {
+    if (user?.id) {
+      void loadData()
+    }
+  }, [user?.id])
+
+  const validateEmailFormat = (value: string): boolean => {
+    const trimmed = value.trim()
+    const regex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+    return regex.test(trimmed) && !trimmed.endsWith('.local')
+  }
+
+  const handleSubmit = async (e: FormEvent) => {
+    e.preventDefault()
+    setErroEmail('')
+    setErroSenha('')
+    setSucessoSolicitacao(null)
+
+    const emailLimpo = novoEmail.trim().toLowerCase()
+
+    // 1. Validação de formato
+    if (!emailLimpo) {
+      setErroEmail('Informe um endereço de e-mail.')
+      return
+    }
+
+    if (!validateEmailFormat(emailLimpo)) {
+      setErroEmail('Informe um endereço de e-mail real válido (exemplo: usuario@gmail.com).')
+      return
+    }
+
+    // Não permitir e-mail técnico .local
+    if (emailLimpo.endsWith('.local') || emailLimpo.includes('bar-do-murilo.local')) {
+      setErroEmail(
+        'Endereços técnicos internos (.local) não podem ser usados como e-mail de recuperação.',
+      )
+      return
+    }
+
+    // 2. Exigir senha recente para proteção contra sequestro de sessão
+    if (!senhaConfirmacao) {
+      setErroSenha('Informe sua senha atual para autorizar a solicitação.')
+      return
+    }
+
+    setSubmitting(true)
+
+    try {
+      // 3. Validação de disponibilidade (não pertencer a outro usuário)
+      const disponivel = await checkEmailDisponivel(emailLimpo)
+      if (!disponivel) {
+        setErroEmail('Este endereço de e-mail já está sendo utilizado por outra conta.')
+        setSubmitting(false)
+        return
+      }
+
+      // 4. Validação da senha atual do usuário (reautenticação local segura)
+      const { error: signInError } = await supabase.auth.signInWithPassword({
+        email: emailAuth,
+        password: senhaConfirmacao,
+      })
+
+      if (signInError) {
+        setErroSenha('Senha atual incorreta. Confirme a senha que você utilizou para entrar.')
+        setSubmitting(false)
+        return
+      }
+
+      // 5. Registra o estado pendente na tabela app_user_emails (user_id = auth.uid())
+      if (user?.id) {
+        await registrarIntencaoEmail(user.id, emailLimpo)
+      }
+
+      // 6. Dispara o fluxo oficial do Supabase Auth para atualização de e-mail
+      // updateUser({ email }) envia a mensagem de confirmação para o novo endereço
+      const { error: updateError } = await supabase.auth.updateUser(
+        {
+          email: emailLimpo,
+        },
+        {
+          emailRedirectTo: 'https://bar-do-murilo-d9d01.goskip.app/redefinir-senha',
+        },
+      )
+
+      if (updateError) {
+        console.warn('updateUser retornou aviso/erro:', updateError.message)
+      }
+
+      // Atualiza o estado da tela para confirmação pendente
+      setSucessoSolicitacao(emailLimpo)
+      setSenhaConfirmacao('')
+      await loadData()
+
+      toast({
+        title: 'Solicitação registrada!',
+        description: `Confirmação enviada para ${emailLimpo}. Verifique sua caixa de entrada.`,
+      })
+    } catch (err) {
+      console.error('Falha no fluxo de vinculação de e-mail:', err)
+      toast({
+        title: 'Não foi possível registrar o e-mail',
+        description: err instanceof Error ? err.message : 'Tente novamente.',
+        variant: 'destructive',
+      })
+    } finally {
+      setSubmitting(false)
+    }
+  }
 
   return (
     <Layout backTo="/usuarios" className="pb-6">
@@ -47,18 +186,18 @@ export const MeuEmail = () => {
           </div>
           <div>
             <h1 className="text-3xl font-bold leading-tight">Meu E-mail</h1>
-            <p className="text-[#A8B3A6]">Configuração para recuperação de senha</p>
+            <p className="text-[#A8B3A6]">E-mail pessoal para recuperação de senha</p>
           </div>
         </div>
       </header>
 
       <section className="space-y-6">
-        {/* Situação Atual da Conta */}
+        {/* Situação Atual da Conta com os Três Estados Claros */}
         <div className="rounded-2xl border border-[#26332A] bg-[#141B15] p-5">
           <h2 className="text-sm font-bold uppercase tracking-wider text-[#A8B3A6]">
-            Situação Atual
+            Situação da Sua Conta
           </h2>
-          <div className="mt-3 space-y-2">
+          <div className="mt-3 space-y-2.5">
             <div className="flex justify-between text-base">
               <span className="text-[#879689]">Usuário:</span>
               <span className="font-bold text-[#F3EAD3]">@{appUser?.username}</span>
@@ -67,42 +206,83 @@ export const MeuEmail = () => {
               <span className="text-[#879689]">Nome:</span>
               <span className="font-semibold text-[#F3EAD3]">{appUser?.nome}</span>
             </div>
-            <div className="flex flex-col gap-1 pt-2 sm:flex-row sm:justify-between sm:items-center">
+            <div className="flex flex-col gap-1 pt-1 sm:flex-row sm:justify-between sm:items-center">
               <span className="text-[#879689]">E-mail de autenticação:</span>
-              <span className="font-mono text-sm text-[#A8B3A6] break-all">{emailAtual}</span>
+              <span className="font-mono text-sm text-[#A8B3A6] break-all">{emailAuth}</span>
             </div>
+
+            {/* Badge de Estado: 1) E-MAIL TÉCNICO, 2) CONFIRMAÇÃO PENDENTE, 3) E-MAIL CONFIRMADO */}
             <div className="pt-2">
-              <span
-                className={`inline-flex items-center rounded-lg px-2.5 py-1 text-xs font-bold ${
-                  isEmailTecnico
-                    ? 'bg-[#F2B705]/10 text-[#F2B705] border border-[#F2B705]/30'
-                    : 'bg-[#3DD68C]/10 text-[#3DD68C] border border-[#3DD68C]/30'
-                }`}
-              >
-                {isEmailTecnico ? 'E-MAIL TÉCNICO LOCAL' : 'E-MAIL PESSOAL VINCULADO'}
-              </span>
+              {isConfirmado && (
+                <div className="inline-flex items-center gap-1.5 rounded-lg border border-[#3DD68C]/40 bg-[#3DD68C]/10 px-3 py-1.5 text-xs font-bold text-[#3DD68C]">
+                  <CheckCircle2 className="h-4 w-4" />
+                  E-MAIL CONFIRMADO E VINCULADO
+                </div>
+              )}
+
+              {isPendente && (
+                <div className="inline-flex items-center gap-1.5 rounded-lg border border-[#F2B705]/40 bg-[#F2B705]/10 px-3 py-1.5 text-xs font-bold text-[#F2B705]">
+                  <Clock className="h-4 w-4 animate-pulse" />
+                  CONFIRMAÇÃO PENDENTE DE VERIFICAÇÃO
+                </div>
+              )}
+
+              {isTecnicoApenas && (
+                <div className="inline-flex items-center gap-1.5 rounded-lg border border-[#718078]/40 bg-[#718078]/10 px-3 py-1.5 text-xs font-bold text-[#A8B3A6]">
+                  <Info className="h-4 w-4" />
+                  E-MAIL TÉCNICO LOCAL (SEM RECUPERAÇÃO AUTOMÁTICA)
+                </div>
+              )}
             </div>
+
+            {/* Detalhe do e-mail cadastrado quando confirmado ou pendente */}
+            {emailRecord?.email_real && (
+              <div className="mt-2 rounded-xl bg-[#0B0F0C] p-3 text-xs">
+                <span className="text-[#879689]">E-mail informado: </span>
+                <span className="font-mono font-bold text-[#F3EAD3] break-all">
+                  {emailRecord.email_real}
+                </span>
+                {emailRecord.verificado ? (
+                  <span className="ml-2 text-[#3DD68C] font-semibold">
+                    (Validado em{' '}
+                    {new Date(
+                      emailRecord.verificado_em || emailRecord.atualizado_em,
+                    ).toLocaleDateString('pt-BR')}
+                    )
+                  </span>
+                ) : (
+                  <span className="ml-2 text-[#F2B705] font-semibold">
+                    (Aguardando confirmação)
+                  </span>
+                )}
+              </div>
+            )}
           </div>
         </div>
 
-        {/* Aviso de Recurso Preparado e Temporariamente Bloqueado */}
-        <div className="rounded-2xl border border-[#F2B705]/40 bg-[#F2B705]/10 p-5 text-sm text-[#F2D06B]">
+        {/* Aviso de Transparência sobre o Envio e Dependência de SMTP do Bar */}
+        <div className="rounded-2xl border border-[#F2B705]/30 bg-[#F2B705]/10 p-5 text-sm text-[#F2D06B]">
           <div className="mb-2 flex items-center gap-2 font-bold text-[#F3EAD3]">
             <AlertCircle className="h-5 w-5 text-[#F2B705]" />
-            <span>Recurso em Preparação (Disponível em Breve)</span>
+            <span>Confirmação Depende do Envio de E-mail (SMTP)</span>
           </div>
           <p className="leading-relaxed">
-            A vinculação do seu e-mail pessoal para recuperação automática está estruturada e será
-            ativada após a homologação do provedor de envio SMTP do bar.
+            Ao informar seu endereço, o sistema solicita a confirmação de titularidade enviando um
+            link seguro.{' '}
+            <strong>
+              O e-mail só será considerado vinculado após o clique no link de confirmação
+            </strong>
+            .
           </p>
           <p className="mt-2 text-xs text-[#E3C368]">
-            Enquanto isso, a redefinição de senhas continua sendo feita com segurança diretamente
-            pelos administradores do bar na tela de Usuários.
+            Enquanto o provedor de e-mail (SMTP) não estiver ativo no servidor, ou enquanto a
+            mensagem não for confirmada, sua senha continuará protegida e poderá ser redefinida
+            normalmente pelos administradores na tela de Usuários.
           </p>
         </div>
 
-        {/* Formulário Preparado (com inputs visíveis e botão desabilitado) */}
-        <form onSubmit={handleBlockedSubmit} className="space-y-4" noValidate>
+        {/* Formulário de Cadastro Individual e Seguro */}
+        <form onSubmit={handleSubmit} className="space-y-4" noValidate>
           <div className="space-y-2">
             <label htmlFor="novo-email" className="field-label">
               SEU E-MAIL REAL (PESSOAL OU COMERCIAL)
@@ -112,23 +292,70 @@ export const MeuEmail = () => {
               type="email"
               placeholder="exemplo@gmail.com"
               value={novoEmail}
-              onChange={(e) => setNovoEmail(e.target.value)}
+              onChange={(e) => {
+                setNovoEmail(e.target.value)
+                setErroEmail('')
+              }}
               className="h-14 rounded-[14px] border-[#26332A] bg-[#141B15] text-lg text-[#F3EAD3] placeholder:text-[#4A574C]"
-              disabled
+              disabled={submitting}
+              autoComplete="email"
+              required
             />
-            <p className="text-xs text-[#879689] flex items-center gap-1.5">
-              <Info className="h-3.5 w-3.5" />
-              Este endereço será usado no futuro para envio de links de recuperação de senha.
-            </p>
+            {erroEmail ? (
+              <p className="text-xs font-semibold text-[#FF9295]">{erroEmail}</p>
+            ) : (
+              <p className="text-xs text-[#879689] flex items-center gap-1.5">
+                <Info className="h-3.5 w-3.5" />
+                Cada usuário edita somente o seu próprio endereço. Não é permitido reutilizar
+                e-mails de outros usuários.
+              </p>
+            )}
+          </div>
+
+          <div className="space-y-2">
+            <label htmlFor="senha-confirmacao" className="field-label">
+              SUA SENHA ATUAL DE ENTRADA
+            </label>
+            <Input
+              id="senha-confirmacao"
+              type="password"
+              placeholder="Digite sua senha atual"
+              value={senhaConfirmacao}
+              onChange={(e) => {
+                setSenhaConfirmacao(e.target.value)
+                setErroSenha('')
+              }}
+              className="h-14 rounded-[14px] border-[#26332A] bg-[#141B15] text-lg text-[#F3EAD3] placeholder:text-[#4A574C]"
+              disabled={submitting}
+              autoComplete="current-password"
+              required
+            />
+            {erroSenha ? (
+              <p className="text-xs font-semibold text-[#FF9295]">{erroSenha}</p>
+            ) : (
+              <p className="text-xs text-[#879689] flex items-center gap-1.5">
+                <ShieldCheck className="h-3.5 w-3.5" />
+                Exigido para garantir que apenas você altere o e-mail da sua conta.
+              </p>
+            )}
           </div>
 
           <Button
             type="submit"
-            className="h-15 w-full rounded-2xl bg-[#26332A] text-base font-bold text-[#879689] cursor-not-allowed"
-            disabled
+            className="h-15 w-full rounded-2xl bg-[#1E6B3A] text-base font-bold text-[#F3EAD3] hover:bg-[#25814A] active:scale-[0.99] transition-all"
+            disabled={submitting || loading}
           >
-            <Lock className="mr-2 h-5 w-5" />
-            VINCULAR E-MAIL (DISPONÍVEL EM BREVE)
+            {submitting ? (
+              <>
+                <LoaderCircle className="mr-2 h-5 w-5 animate-spin" />
+                SOLICITANDO CONFIRMAÇÃO...
+              </>
+            ) : (
+              <>
+                <Send className="mr-2 h-5 w-5 text-[#F2B705]" />
+                SOLICITAR CONFIRMAÇÃO DE E-MAIL
+              </>
+            )}
           </Button>
         </form>
 
