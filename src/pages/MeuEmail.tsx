@@ -148,7 +148,7 @@ export const MeuEmail = () => {
           email: emailLimpo,
         },
         {
-          emailRedirectTo: 'https://bar-do-murilo-d9d01.goskip.app/redefinir-senha',
+          emailRedirectTo: 'https://bar-do-murilo-d9d01.goskip.app/meu-email',
         },
       )
 

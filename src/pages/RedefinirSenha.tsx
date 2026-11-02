@@ -25,9 +25,15 @@ export const RedefinirSenha = () => {
     // O link de recuperação do Supabase traz tokens no hash (#access_token=...&type=recovery).
     // O evento oficial disparado é PASSWORD_RECOVERY.
     // Uma sessão comum de login (ou abertura direta sem hash de recovery) NÃO comprova recuperação e deve ser bloqueada.
-    const isRecoveryHash =
-      window.location.hash.includes('type=recovery') ||
-      window.location.hash.includes('access_token=')
+    const hash = window.location.hash
+    const search = window.location.search
+
+    // Suporta tokens no fragmento de hash (#type=recovery, #access_token=...)
+    // bem como em query params (?type=recovery, etc.)
+    const isRecoveryParams =
+      hash.includes('type=recovery') ||
+      hash.includes('access_token=') ||
+      search.includes('type=recovery')
 
     const {
       data: { subscription },
@@ -39,19 +45,25 @@ export const RedefinirSenha = () => {
       }
     })
 
-    // Dá um breve tempo para o GoTrue processar o hash da URL se presente
-    const timer = setTimeout(() => {
+    // Dá um breve tempo para o cliente Supabase processar a sessão de recovery
+    const timer = setTimeout(async () => {
       if (!active) return
-      if (!isRecoveryHash) {
-        // Se a página não veio com parâmetros de recovery no hash, invalida diretamente
-        setSessionValid(false)
-        setCheckingSession(false)
-      } else {
-        // Caso houvesse hash mas o evento PASSWORD_RECOVERY não disparou após 2s, invalida
-        setSessionValid((prev) => (prev === true ? true : false))
-        setCheckingSession(false)
+
+      // Se já foi validado pelo evento PASSWORD_RECOVERY, nada mais a fazer
+      // Caso contrário, verifica se já existe uma sessão ativa originada de recovery
+      if (isRecoveryParams) {
+        const { data } = await supabase.auth.getSession()
+        if (!active) return
+        if (data.session) {
+          setSessionValid(true)
+          setCheckingSession(false)
+          return
+        }
       }
-    }, 1500)
+
+      setSessionValid((prev) => (prev === true ? true : false))
+      setCheckingSession(false)
+    }, 1200)
 
     return () => {
       active = false
