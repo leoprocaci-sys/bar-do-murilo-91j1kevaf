@@ -136,34 +136,50 @@ export const MeuEmail = () => {
         return
       }
 
-      // 5. Registra o estado pendente na tabela app_user_emails (user_id = auth.uid())
-      if (user?.id) {
-        await registrarIntencaoEmail(user.id, emailLimpo)
-      }
-
-      // 6. Dispara o fluxo oficial do Supabase Auth para atualização de e-mail
-      // updateUser({ email }) envia a mensagem de confirmação para o novo endereço
+      // 5. Primeiro solicita a mudança de e-mail ao Supabase Auth.
+      // Só depois registra a intenção no banco: não marcar como pendente
+      // uma solicitação recusada por SMTP, URL ou configuração de Auth.
       const { error: updateError } = await supabase.auth.updateUser(
         {
           email: emailLimpo,
         },
         {
-          emailRedirectTo: 'https://bar-do-murilo-d9d01.goskip.app/meu-email',
+          emailRedirectTo: 'https://bar-do-murilo-d9d01.goskip.app/usuarios/meu-email',
         },
       )
 
       if (updateError) {
-        console.warn('updateUser retornou aviso/erro:', updateError.message)
+        throw new Error(
+          `O Supabase não aceitou a solicitação: ${updateError.message}. Verifique as configurações de envio de e-mails e redirecionamento.`,
+        )
       }
 
-      // Atualiza o estado da tela para confirmação pendente
+      // 6. A confirmação ainda depende do clique no link do e-mail.
+      // Um erro de gravação aqui não desfaz a solicitação já aceita no Auth.
+      if (user?.id) {
+        try {
+          await registrarIntencaoEmail(user.id, emailLimpo)
+        } catch (recordError) {
+          console.error('Falha ao registrar estado pendente após solicitação aceita:', recordError)
+          setSenhaConfirmacao('')
+          toast({
+            title: 'Solicitação aceita pelo Supabase',
+            description:
+              'Não foi possível atualizar o status interno. Se receber o e-mail, confirme pelo link e entre novamente; caso contrário, procure o administrador.',
+            variant: 'destructive',
+          })
+          return
+        }
+      }
+
       setSucessoSolicitacao(emailLimpo)
       setSenhaConfirmacao('')
       await loadData()
 
       toast({
-        title: 'Solicitação registrada!',
-        description: `Confirmação enviada para ${emailLimpo}. Verifique sua caixa de entrada.`,
+        title: 'Solicitação aceita pelo Supabase',
+        description:
+          'Se o e-mail for entregue, clique no link para confirmar o endereço. O cadastro só estará concluído após a confirmação.',
       })
     } catch (err) {
       console.error('Falha no fluxo de vinculação de e-mail:', err)
