@@ -2,6 +2,7 @@
   "_versions": {
     "admin-users": 12,
     "request-password-reset": 2,
-    "user-login": 1
+    "user-login": 1,
+    "migrar-emails-gestores": 1
   }
 }
