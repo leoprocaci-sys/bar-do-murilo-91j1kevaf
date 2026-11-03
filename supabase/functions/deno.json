@@ -3,6 +3,7 @@
     "admin-users": 12,
     "request-password-reset": 2,
     "user-login": 1,
-    "migrar-emails-gestores": 2
+    "migrar-emails-gestores": 2,
+    "limpeza-1-purga": 5
   }
 }
