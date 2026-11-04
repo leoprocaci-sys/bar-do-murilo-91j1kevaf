@@ -1,4 +1,4 @@
-import { Banknote, BookOpenText, LogOut, Users } from 'lucide-react'
+import { Banknote, BookOpenText, ClipboardList, LogOut, Package, Users } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { BrandLogo } from '@/components/BrandLogo'
 import Layout from '@/components/Layout'
@@ -59,6 +59,24 @@ const Index = () => {
         >
           <Banknote className="mr-5 h-8 w-8" aria-hidden="true" />
           CAIXA
+        </Button>
+        <Button
+          type="button"
+          variant="outline"
+          className="h-16 w-full justify-start rounded-2xl border-[#26332A] bg-[#141B15] px-6 text-lg font-bold tracking-wide text-[#F3EAD3] hover:bg-[#1A251C] hover:text-white active:scale-[0.98]"
+          onClick={() => navigate('/comandas')}
+        >
+          <ClipboardList className="mr-4 h-6 w-6 text-[#F2B705]" aria-hidden="true" />
+          COMANDAS
+        </Button>
+        <Button
+          type="button"
+          variant="outline"
+          className="h-16 w-full justify-start rounded-2xl border-[#26332A] bg-[#141B15] px-6 text-lg font-bold tracking-wide text-[#F3EAD3] hover:bg-[#1A251C] hover:text-white active:scale-[0.98]"
+          onClick={() => navigate('/produtos')}
+        >
+          <Package className="mr-4 h-6 w-6 text-[#F2B705]" aria-hidden="true" />
+          PRODUTOS
         </Button>
         <Button
           type="button"

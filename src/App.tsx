@@ -28,6 +28,13 @@ import FiadoFichaCliente from '@/pages/fiado/FiadoFichaCliente'
 import FiadoConsumoForm from '@/pages/fiado/FiadoConsumoForm'
 import FiadoPagamentoForm from '@/pages/fiado/FiadoPagamentoForm'
 import FiadoRelatorios from '@/pages/fiado/FiadoRelatorios'
+import ProdutosPage from '@/pages/produtos/ProdutosPage'
+import ComandasLista from '@/pages/comandas/ComandasLista'
+import ComandaDetalhe from '@/pages/comandas/ComandaDetalhe'
+import ComandaPrevia from '@/pages/comandas/ComandaPrevia'
+import ComandaFechamento from '@/pages/comandas/ComandaFechamento'
+import ComandaFechada from '@/pages/comandas/ComandaFechada'
+import ComandaIdentificacao from '@/pages/comandas/ComandaIdentificacao'
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -198,6 +205,70 @@ const App = () => (
               element={
                 <Protected>
                   <CaixaConsumoPessoa />
+                </Protected>
+              }
+            />
+            <Route
+              path="/produtos"
+              element={
+                <Protected>
+                  <ProdutosPage />
+                </Protected>
+              }
+            />
+            <Route
+              path="/comandas"
+              element={
+                <Protected>
+                  <ComandasLista />
+                </Protected>
+              }
+            />
+            <Route
+              path="/comandas/nova"
+              element={
+                <Protected>
+                  <ComandasLista />
+                </Protected>
+              }
+            />
+            <Route
+              path="/comandas/:id"
+              element={
+                <Protected>
+                  <ComandaDetalhe />
+                </Protected>
+              }
+            />
+            <Route
+              path="/comandas/:id/previa"
+              element={
+                <Protected>
+                  <ComandaPrevia />
+                </Protected>
+              }
+            />
+            <Route
+              path="/comandas/:id/fechamento"
+              element={
+                <Protected>
+                  <ComandaFechamento />
+                </Protected>
+              }
+            />
+            <Route
+              path="/comandas/:id/fechado"
+              element={
+                <Protected>
+                  <ComandaFechada />
+                </Protected>
+              }
+            />
+            <Route
+              path="/comandas/:id/identificacao"
+              element={
+                <Protected>
+                  <ComandaIdentificacao />
                 </Protected>
               }
             />
