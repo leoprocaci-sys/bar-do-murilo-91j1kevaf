@@ -17,8 +17,8 @@ import type { FormaParcela } from '@/types/comandas'
 const LABEL_FORMA: Record<FormaParcela, string> = {
   dinheiro: 'Dinheiro',
   pix: 'PIX',
-  debito: 'Cartão de débito',
-  credito: 'Cartão de crédito',
+  cartao_debito: 'Cartão de débito',
+  cartao_credito: 'Cartão de crédito',
   fiado: 'Fiado',
 }
 

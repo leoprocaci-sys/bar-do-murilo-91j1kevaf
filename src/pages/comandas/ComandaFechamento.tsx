@@ -28,8 +28,8 @@ import type { FormaParcela, ParcelaFechamento } from '@/types/comandas'
 const FORMAS: Array<{ forma: FormaParcela; label: string }> = [
   { forma: 'dinheiro', label: 'Dinheiro' },
   { forma: 'pix', label: 'PIX' },
-  { forma: 'debito', label: 'Cartão de débito' },
-  { forma: 'credito', label: 'Cartão de crédito' },
+  { forma: 'cartao_debito', label: 'Cartão de débito' },
+  { forma: 'cartao_credito', label: 'Cartão de crédito' },
   { forma: 'fiado', label: 'Fiado' },
 ]
 
